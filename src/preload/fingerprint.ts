@@ -20,7 +20,7 @@ if (arg) {
       const WrappedDateTimeFormat = function(locales?: Intl.LocalesArgument, options?: Intl.DateTimeFormatOptions) {
         return new NativeDateTimeFormat(locales, { ...options, timeZone: options?.timeZone ?? settings.timezone });
       } as typeof Intl.DateTimeFormat;
-      WrappedDateTimeFormat.prototype = NativeDateTimeFormat.prototype;
+      Object.defineProperty(WrappedDateTimeFormat, 'prototype', { value: NativeDateTimeFormat.prototype });
       Object.setPrototypeOf(WrappedDateTimeFormat, NativeDateTimeFormat);
       Intl.DateTimeFormat = WrappedDateTimeFormat;
     }

@@ -30,6 +30,7 @@ export interface BrowserProfile {
   name: string;
   avatar: string;
   color: string;
+  pinned?: boolean;
   createdAt: string;
   proxy?: ProxyConfig;
   browser: BrowserSettings;

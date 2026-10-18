@@ -5,6 +5,7 @@ if (arg) {
   try {
     const settings = JSON.parse(Buffer.from(arg.slice('--moccount-fingerprint='.length), 'base64').toString('utf8')) as {
       hardwareConcurrency?: number; deviceMemory?: number; locale?: string; timezone?: string;
+      osPlatform?: string; screenWidth?: number; screenHeight?: number; webglVendor?: string; webglRenderer?: string;
     };
     const define = (target: object, key: string, value: unknown) => {
       try { Object.defineProperty(target, key, { configurable: true, get: () => value }); } catch { /* Chromium may lock a property */ }
@@ -12,6 +13,39 @@ if (arg) {
     const navigatorCtor = (globalThis as unknown as { Navigator?: { prototype: object } }).Navigator;
     if (navigatorCtor && Number.isFinite(settings.hardwareConcurrency)) define(navigatorCtor.prototype, 'hardwareConcurrency', settings.hardwareConcurrency);
     if (navigatorCtor && Number.isFinite(settings.deviceMemory)) define(navigatorCtor.prototype, 'deviceMemory', settings.deviceMemory);
+    if (navigatorCtor && settings.osPlatform) define(navigatorCtor.prototype, 'platform', settings.osPlatform);
+
+    const screenCtor = (globalThis as unknown as { Screen?: { prototype: object } }).Screen;
+    if (screenCtor && Number.isFinite(settings.screenWidth) && (settings.screenWidth ?? 0) > 0) {
+      define(screenCtor.prototype, 'width', settings.screenWidth);
+      define(screenCtor.prototype, 'availWidth', settings.screenWidth);
+    }
+    if (screenCtor && Number.isFinite(settings.screenHeight) && (settings.screenHeight ?? 0) > 0) {
+      define(screenCtor.prototype, 'height', settings.screenHeight);
+      define(screenCtor.prototype, 'availHeight', settings.screenHeight);
+    }
+
+    if (settings.webglVendor || settings.webglRenderer) {
+      const patchWebGL = (prototype: { getParameter: (parameter: number) => unknown } | undefined) => {
+        if (!prototype) return;
+        const nativeGetParameter = prototype.getParameter;
+        try {
+          Object.defineProperty(prototype, 'getParameter', {
+            configurable: true,
+            writable: true,
+            value: function(this: object, parameter: number) {
+              if (parameter === 37445 && settings.webglVendor) return settings.webglVendor;
+              if (parameter === 37446 && settings.webglRenderer) return settings.webglRenderer;
+              return nativeGetParameter.call(this, parameter);
+            },
+          });
+        } catch { /* WebGL prototypes can be locked by Chromium */ }
+      };
+      const gl1 = (globalThis as unknown as { WebGLRenderingContext?: { prototype: { getParameter: (parameter: number) => unknown } } }).WebGLRenderingContext;
+      const gl2 = (globalThis as unknown as { WebGL2RenderingContext?: { prototype: { getParameter: (parameter: number) => unknown } } }).WebGL2RenderingContext;
+      patchWebGL(gl1?.prototype);
+      patchWebGL(gl2?.prototype);
+    }
     if (navigatorCtor && settings.locale) {
       define(navigatorCtor.prototype, 'language', settings.locale);
       define(navigatorCtor.prototype, 'languages', [settings.locale]);

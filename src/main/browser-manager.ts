@@ -1,29 +1,35 @@
 import { BrowserWindow, session, Session } from 'electron';
-import path from 'node:path';
 import { BrowserProfile, ProfileDraft } from '../shared/types';
-import { updateProfile } from './store';
 
 interface RunningProfile { window: BrowserWindow; session: Session }
 const running = new Map<string, RunningProfile>();
+const proxyLoginRegistered = new Set<string>();
 
 function partitionFor(id: string) { return `persist:moccount-${id}`; }
 
 function safeUrl(value: string): string {
   const candidate = value.trim();
   const url = new URL(/^[a-zA-Z][a-zA-Z\d+.-]*:/.test(candidate) ? candidate : `https://${candidate}`);
-  if (!['http:', 'https:', 'file:'].includes(url.protocol)) throw new Error('Only HTTP and HTTPS start pages are supported.');
+  if (!['http:', 'https:'].includes(url.protocol)) throw new Error('Only HTTP and HTTPS start pages are supported.');
   return url.toString();
 }
 
 function proxyRule(profile: BrowserProfile): string | undefined {
   const proxy = profile.proxy;
   if (!proxy?.host || !proxy.port) return undefined;
-  if (proxy.username || proxy.password) {
-    // Chromium does not support embedding proxy authentication in proxy-server URLs reliably.
-    // Credentials are handled through Electron's login event on the owning session.
-  }
   const scheme = proxy.type === 'socks5' ? 'socks5' : proxy.type === 'https' ? 'https' : 'http';
   return `${scheme}://${proxy.host}:${proxy.port}`;
+}
+
+function configureProxyAuth(ses: Session, partition: string, username?: string, password?: string) {
+  if ((!username && !password) || proxyLoginRegistered.has(partition)) return;
+  proxyLoginRegistered.add(partition);
+  ses.on('login', (event, _details, authInfo, callback) => {
+    if (authInfo.isProxy) {
+      event.preventDefault();
+      callback(username ?? '', password ?? '');
+    }
+  });
 }
 
 export async function launchProfile(profile: BrowserProfile): Promise<void> {
@@ -34,21 +40,16 @@ export async function launchProfile(profile: BrowserProfile): Promise<void> {
   const proxy = proxyRule(profile);
   if (proxy) await ses.setProxy({ proxyRules: proxy });
   else await ses.setProxy({ mode: 'system' });
-  if (profile.proxy?.username || profile.proxy?.password) {
-    ses.on('login', (event, _details, authInfo, callback) => {
-      if (authInfo.isProxy) {
-        event.preventDefault();
-        callback(profile.proxy?.username ?? '', profile.proxy?.password ?? '');
-      }
-    });
-  }
+  // Reuse a single handler per persistent session to avoid duplicate login listeners.
+  // Profile settings can only be edited while stopped; first initialization supplies current credentials.
+  configureProxyAuth(ses, partition, profile.proxy?.username, profile.proxy?.password);
   const win = new BrowserWindow({
     width: profile.browser.width,
     height: profile.browser.height,
     title: `MoCcount — ${profile.name}`,
     backgroundColor: profile.color,
     webPreferences: {
-      session: ses,
+      partition,
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
@@ -73,7 +74,6 @@ export function stopProfile(id: string): void {
 }
 
 export function getRunningIds(): string[] { return [...running.keys()]; }
-export function isRunning(id: string): boolean { return running.has(id); }
 
 export async function checkProxy(draft: ProfileDraft): Promise<{ ok: boolean; message: string }> {
   if (!draft.proxy) return { ok: false, message: 'Add proxy details before testing the connection.' };
@@ -81,15 +81,12 @@ export async function checkProxy(draft: ProfileDraft): Promise<{ ok: boolean; me
   if (!host.trim() || !Number.isInteger(port) || port < 1 || port > 65535) {
     return { ok: false, message: 'Enter a valid proxy host and port.' };
   }
-  const ses = session.fromPartition(`temp:moccount-proxy-test-${Date.now()}`);
+  const partition = `moccount-proxy-test-${crypto.randomUUID()}`;
+  const ses = session.fromPartition(partition);
   try {
     const scheme = type === 'socks5' ? 'socks5' : type === 'https' ? 'https' : 'http';
     await ses.setProxy({ proxyRules: `${scheme}://${host}:${port}` });
-    if (username || password) {
-      ses.on('login', (event, _details, authInfo, callback) => {
-        if (authInfo.isProxy) { event.preventDefault(); callback(username ?? '', password ?? ''); }
-      });
-    }
+    configureProxyAuth(ses, partition, username, password);
     const response = await ses.fetch('https://www.google.com/generate_204', { signal: AbortSignal.timeout(9000) });
     return response.ok || response.status === 204
       ? { ok: true, message: 'Proxy connection succeeded.' }
@@ -98,6 +95,8 @@ export async function checkProxy(draft: ProfileDraft): Promise<{ ok: boolean; me
     return { ok: false, message: error instanceof Error ? error.message : 'Proxy connection failed.' };
   } finally {
     await ses.clearStorageData().catch(() => undefined);
+    await ses.clearCache().catch(() => undefined);
+    proxyLoginRegistered.delete(partition);
   }
 }
 

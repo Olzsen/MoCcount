@@ -14,7 +14,8 @@ declare global {
       getRunningIds(): Promise<string[]>;
       launchProfilesTogether(ids: string[]): Promise<void>;
       launchProfilesTiled(ids: string[]): Promise<void>;
-      createDesktopShortcut(id: string): Promise<{ ok: boolean; message: string }>;
+      createLauncherShortcut(): Promise<{ ok: boolean; message: string }>;
+      setProfilePinned(id: string, pinned: boolean): Promise<ProfileSummary>;
       updateApplication(): Promise<{ ok: boolean; message: string; restartRequired?: boolean; version?: string }>;
       onUpdateStatus(callback: (message: { type: string; message: string; version?: string; percent?: number }) => void): () => void;
     };

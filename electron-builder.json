@@ -23,5 +23,13 @@
     "target": [
       "AppImage"
     ]
-  }
+  },
+  "publish": [
+    {
+      "provider": "github",
+      "owner": "Olzsen",
+      "repo": "MoCcount",
+      "releaseType": "release"
+    }
+  ]
 }

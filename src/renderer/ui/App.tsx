@@ -42,7 +42,7 @@ export default function App() {
   function openEdit(profile: ProfileSummary) {
     setEditingId(profile.id);
     const { status: _status, userDataPath: _path, createdAt: _created, id: _id, proxy, ...rest } = profile;
-    setDraft({ ...rest, browser: { ...profile.browser }, proxy: proxy ? { type: proxy.type, host: proxy.host, port: proxy.port, username: proxy.username, password: '' } : undefined });
+    setDraft({ ...rest, browser: { ...defaultBrowser, ...profile.browser }, proxy: proxy ? { type: proxy.type, host: proxy.host, port: proxy.port, username: proxy.username, password: '' } : undefined });
     setProxyEnabled(Boolean(proxy)); setProxyResult(null); setShowBrowser(true); setMenuId(null); setModal('edit');
   }
   function patchDraft(patch: Partial<ProfileDraft>) { setDraft((prev) => ({ ...prev, ...patch })); }
@@ -80,7 +80,7 @@ export default function App() {
   async function duplicateProfile(profile: ProfileSummary) {
     setMenuId(null);
     const { name, avatar, color, browser, proxy } = profile;
-    setDraft({ name: `${name} copy`, avatar, color, browser: { ...browser }, proxy: proxy ? { type: proxy.type, host: proxy.host, port: proxy.port, username: proxy.username, password: '' } : undefined });
+    setDraft({ name: `${name} copy`, avatar, color, browser: { ...defaultBrowser, ...browser }, proxy: proxy ? { type: proxy.type, host: proxy.host, port: proxy.port, username: proxy.username, password: '' } : undefined });
     setEditingId(null); setProxyEnabled(Boolean(proxy)); setShowBrowser(true); setProxyResult(null); setModal('create');
   }
 

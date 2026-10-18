@@ -206,8 +206,8 @@ function registerIpc() {
   ipcMain.handle('app:create-shortcut', () => createLauncherDesktopShortcut());
   ipcMain.handle('profiles:pin', (_event, id: unknown, pinned: unknown) => {
     if (typeof id !== 'string' || typeof pinned !== 'boolean') throw new Error('Некорректные параметры закрепления профиля.');
-    if (getRunningIds().includes(id)) throw new Error('Остановите профиль перед изменением закрепления.');
-    return redact(setProfilePinned(id, pinned), 'stopped');
+    const status = getRunningIds().includes(id) ? 'running' : 'stopped';
+    return redact(setProfilePinned(id, pinned), status);
   });
   ipcMain.handle('app:update', async () => {
     if (!app.isPackaged) return updateFromSource();

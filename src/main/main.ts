@@ -5,7 +5,7 @@ import { promisify } from 'node:util';
 import { autoUpdater } from 'electron-updater';
 import { profileDraftSchema } from '../shared/validation';
 import { BrowserProfile, ProfileDraft, ProfileSummary } from '../shared/types';
-import { createProfile, deleteProfile, listProfiles, updateProfile } from './store';
+import { createProfile, deleteProfile, listProfiles, setProfilePinned, updateProfile } from './store';
 import { backGroup, checkProxy, clearSiteData, forwardGroup, getRunningIds, installProxyAuthHandler, launchProfile, launchProfilesTogether, navigateGroup, relayGroupInteraction, reloadGroup, toggleGroupAlwaysOnTop, setGroupInteractionSync, stopProfile } from './browser-manager';
 
 const isDev = !app.isPackaged;
@@ -86,22 +86,21 @@ function startupProfileId(): string | undefined {
   return index >= 0 ? process.argv[index + 1] : undefined;
 }
 
-function createDesktopShortcut(id: string): { ok: boolean; message: string } {
-  if (process.platform !== 'win32') return { ok: false, message: 'Создание ярлыка сейчас поддерживается в Windows.' };
-  const profile = listProfiles().find((item) => item.id === id);
-  if (!profile) return { ok: false, message: 'Профиль не найден.' };
-  const safeName = profile.name.replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').trim().slice(0, 90) || 'MoCcount';
-  const shortcutPath = path.join(app.getPath('desktop'), `MoCcount — ${safeName}.lnk`);
-  const args = app.isPackaged ? `--moccount-profile=${id}` : `\"${app.getAppPath().replace(/\"/g, '\\\"')}\" --moccount-profile=${id}`;
+function createLauncherDesktopShortcut(): { ok: boolean; message: string } {
+  if (process.platform !== 'win32') return { ok: false, message: 'Создание ярлыка лаунчера сейчас поддерживается в Windows.' };
+  const shortcutPath = path.join(app.getPath('desktop'), 'MoCcount.lnk');
+  const args = app.isPackaged
+    ? ''
+    : `"${app.getAppPath().replace(/"/g, '\\\"')}"`;
   const ok = shell.writeShortcutLink(shortcutPath, 'create', {
     target: process.execPath,
     args,
-    description: `Открыть профиль MoCcount: ${profile.name}`,
+    description: 'Запустить лаунчер MoCcount',
     icon: process.execPath,
   });
   return ok
-    ? { ok: true, message: `Ярлык создан на рабочем столе: MoCcount — ${safeName}.` }
-    : { ok: false, message: 'Windows не смогла создать ярлык.' };
+    ? { ok: true, message: 'Ярлык лаунчера MoCcount создан на рабочем столе.' }
+    : { ok: false, message: 'Windows не смогла создать ярлык лаунчера.' };
 }
 
 function redact(profile: BrowserProfile, status: 'stopped' | 'starting' | 'running'): ProfileSummary {
@@ -204,9 +203,11 @@ function registerIpc() {
     await clearSiteData(id);
   });
   ipcMain.handle('browser:running', () => getRunningIds());
-  ipcMain.handle('profiles:create-shortcut', (_event, id: unknown) => {
-    if (typeof id !== 'string') return { ok: false, message: 'Некорректный профиль.' };
-    return createDesktopShortcut(id);
+  ipcMain.handle('app:create-shortcut', () => createLauncherDesktopShortcut());
+  ipcMain.handle('profiles:pin', (_event, id: unknown, pinned: unknown) => {
+    if (typeof id !== 'string' || typeof pinned !== 'boolean') throw new Error('Некорректные параметры закрепления профиля.');
+    if (getRunningIds().includes(id)) throw new Error('Остановите профиль перед изменением закрепления.');
+    return redact(setProfilePinned(id, pinned), 'stopped');
   });
   ipcMain.handle('app:update', async () => {
     if (!app.isPackaged) return updateFromSource();

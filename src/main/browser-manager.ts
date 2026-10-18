@@ -211,7 +211,7 @@ async function openBrowserGroup(profiles: BrowserProfile[], isMulti: boolean): P
         webPreferences: {
           partition,
           preload: path.join(__dirname, '../preload/fingerprint.js'),
-          additionalArguments: [`--moccount-fingerprint=${fingerprint}`],
+          additionalArguments: [`--moccount-fingerprint=${fingerprint}`, `--moccount-group=${groupId}`, `--moccount-profile=${profile.id}`],
           contextIsolation: true,
           nodeIntegration: false,
           sandbox: true,

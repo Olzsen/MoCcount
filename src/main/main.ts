@@ -3,7 +3,7 @@ import path from 'node:path';
 import { profileDraftSchema } from '../shared/validation';
 import { BrowserProfile, ProfileDraft, ProfileSummary } from '../shared/types';
 import { createProfile, deleteProfile, listProfiles, updateProfile } from './store';
-import { checkProxy, clearSiteData, getRunningIds, installProxyAuthHandler, launchProfile, stopProfile } from './browser-manager';
+import { backGroup, checkProxy, clearSiteData, forwardGroup, getRunningIds, installProxyAuthHandler, launchProfile, launchProfilesTogether, navigateGroup, reloadGroup, stopProfile } from './browser-manager';
 
 const isDev = !app.isPackaged;
 let mainWindow: BrowserWindow | undefined;
@@ -53,6 +53,28 @@ function registerIpc() {
     await launchProfile(profile);
   });
   ipcMain.handle('browser:stop', (_event, id: string) => stopProfile(id));
+  ipcMain.handle('browser:launch-together', async (_event, ids: unknown) => {
+    if (!Array.isArray(ids) || ids.length < 2 || ids.length > 16 || ids.some((id) => typeof id !== 'string')) {
+      throw new Error('Выберите от 2 до 16 профилей для мульти-режима.');
+    }
+    const uniqueIds = [...new Set(ids as string[])];
+    if (uniqueIds.length !== ids.length) throw new Error('В списке есть повторяющиеся профили.');
+    const profiles = listProfiles();
+    const selected = uniqueIds.map((id) => {
+      const profile = profiles.find((item) => item.id === id);
+      if (!profile) throw new Error('Один из выбранных профилей не найден.');
+      return profile;
+    });
+    await launchProfilesTogether(selected);
+  });
+  ipcMain.handle('group:navigate', (_event, id: unknown, value: unknown) => {
+    if (typeof id !== 'string' || typeof value !== 'string' || value.length > 4096) throw new Error('Некорректный адрес или поисковый запрос.');
+    navigateGroup(id, value);
+  });
+  ipcMain.handle('group:back', (_event, id: unknown) => { if (typeof id === 'string') backGroup(id); });
+  ipcMain.handle('group:forward', (_event, id: unknown) => { if (typeof id === 'string') forwardGroup(id); });
+  ipcMain.handle('group:reload', (_event, id: unknown) => { if (typeof id === 'string') reloadGroup(id); });
+
   ipcMain.handle('proxy:check', (_event, draft: unknown) => checkProxy(validatedDraft(draft)));
   ipcMain.handle('browser:clear-data', async (_event, id: string) => {
     if (getRunningIds().includes(id)) throw new Error('Close the profile before clearing its site data.');

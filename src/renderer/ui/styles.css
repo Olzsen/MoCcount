@@ -37,3 +37,12 @@ input:focus-visible,textarea:focus-visible,select:focus-visible{outline:none}
 @keyframes soft-appear{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
 @media(max-width:980px){.bulk-toolbar{gap:6px}.selection-count{margin-left:4px}.clear-selection{margin-left:0}}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;scroll-behavior:auto!important;transition-duration:.01ms!important}}
+
+
+/* Update action */
+.update-button{height:30px;display:inline-flex;align-items:center;justify-content:center;gap:7px;padding:0 10px;background:#20212a;border:1px solid #373944;border-radius:7px;color:#bcb4fa;font-size:10px;font-weight:600;white-space:nowrap;transition:background .16s,border-color .16s,transform .16s}
+.update-button:hover:not(:disabled){background:#2b2939;border-color:#62588d;transform:translateY(-1px)}
+.update-button:disabled{opacity:.7;cursor:wait}
+.update-spin{animation:update-spin .8s linear infinite}
+@keyframes update-spin{to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){.update-spin{animation:none}}

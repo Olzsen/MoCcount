@@ -10,6 +10,8 @@ interface BrowserGroup {
   views: Map<string, GroupView>;
   lastSynchronizedUrl: string;
   isMulti: boolean;
+  layoutMode: 'tiled' | 'focus';
+  alwaysOnTop: boolean;
   syncInteractions: boolean;
   initializing: boolean;
   closing: boolean;
@@ -24,39 +26,122 @@ const GROUP_CONTROLLER_HTML = `<!doctype html>
 <html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>MoCcount</title><style>
 *{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#111218;color:#eef0f7;font:13px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
-.toolbar{height:64px;display:flex;align-items:center;gap:8px;padding:0 14px;background:#171920;border-bottom:1px solid #2d303b;box-shadow:0 3px 12px #0002}
-.brand{font-weight:750;letter-spacing:-.4px;color:#a99bff;margin-right:5px;white-space:nowrap}.group-label{font-size:10px;color:#8c91a1;border:1px solid #343743;padding:5px 8px;border-radius:6px;white-space:nowrap}
-button{height:34px;min-width:34px;padding:0 10px;border:1px solid #353946;border-radius:8px;background:#22252e;color:#e2e5ef;cursor:pointer;transition:background .16s,border-color .16s,transform .16s}
-button:hover{background:#303441;border-color:#4a4e60}button:active{transform:scale(.97)}button:disabled{opacity:.4;cursor:default}.pane-labels{height:24px;display:flex;background:#101116;border-bottom:1px solid #2d303b;overflow:hidden;pointer-events:none}.pane-label{display:flex;align-items:center;gap:7px;flex:1;min-width:0;padding:0 10px;border-right:1px solid #2d303b;color:#a5a9b8;font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.pane-dot{width:6px;height:6px;flex:0 0 6px;border-radius:50%}
-.address{height:36px;min-width:70px;flex:1;background:#0e1015;border:1px solid #383c49;border-radius:9px;color:#f0f1f5;padding:0 12px;font:inherit;font-size:12px;outline:none;user-select:text;-webkit-user-select:text;pointer-events:auto}
-.address:focus{border-color:#9486f4;box-shadow:0 0 0 3px #9486f41c}.go{background:#9486f4;color:#171522;border-color:#a89dff;font-weight:700}.go:hover{background:#a99dfc}
-@media(max-width:800px){.group-label{display:none}.brand{display:none}.toolbar{padding:0 7px;gap:5px}button{padding:0 7px}}
-</style></head><body><div class="toolbar">
-<span class="brand">MoCcount</span><span class="group-label" id="mode">Профиль</span>
-<button id="back" title="Назад" aria-label="Назад">←</button><button id="forward" title="Вперёд" aria-label="Вперёд">→</button><button id="reload" title="Обновить" aria-label="Обновить">↻</button>
-<input id="address" class="address" autocomplete="off" spellcheck="false" placeholder="Введите адрес или поисковый запрос" aria-label="Адрес или поисковый запрос">
-<button id="go" class="go">Перейти</button><button id="sync-actions" style="display:none" data-enabled="false" title="Повторять клики и обычный текст во всех окнах">Действия выкл.</button>
-</div><div id="pane-labels" class="pane-labels"><!--PANE_LABELS--></div><script>
+.global-bar{height:48px;display:flex;align-items:center;gap:8px;padding:0 12px;background:#171920;border-bottom:1px solid #2d303b;box-shadow:0 3px 12px #0002}
+.brand{font-weight:800;letter-spacing:-.4px;color:#a99bff;white-space:nowrap}.group-label{font-size:10px;color:#8c91a1;border:1px solid #343743;padding:5px 8px;border-radius:6px;white-space:nowrap}
+button{height:30px;min-width:29px;padding:0 8px;border:1px solid #353946;border-radius:7px;background:#22252e;color:#e2e5ef;cursor:pointer;transition:background .16s,border-color .16s,transform .16s;flex-shrink:0}
+button:hover{background:#303441;border-color:#4a4e60}button:active{transform:scale(.97)}button:disabled{opacity:.4;cursor:default}
+.global-action{height:29px;font-size:10px;white-space:nowrap}.global-action.active{color:#9be0bd;border-color:#3a6b54;background:#1b3028}
+.profile-tiles{height:calc(100vh - 48px);display:grid;overflow:hidden;background:#0d0f14}
+.profile-pane{min-width:0;min-height:0;display:flex;flex-direction:column;overflow:hidden;border-right:1px solid #2c2f39;border-bottom:1px solid #2c2f39}
+.pane-toolbar{height:42px;min-height:42px;display:flex;align-items:center;gap:5px;padding:0 7px;background:#171920;border-bottom:1px solid #343744}
+.pane-title{max-width:104px;min-width:30px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#b5b9c8;font-size:10px;flex-shrink:1}
+.pane-dot{display:inline-block;width:6px;height:6px;border-radius:50%;margin-right:5px;vertical-align:middle}
+.address{height:29px;min-width:35px;flex:1;background:#0e1015;border:1px solid #383c49;border-radius:7px;color:#f0f1f5;padding:0 8px;font:inherit;font-size:10px;outline:none;user-select:text;-webkit-user-select:text;pointer-events:auto}
+.address:focus{border-color:#9486f4;box-shadow:0 0 0 2px #9486f41c}
+.go{background:#9486f4;color:#171522;border-color:#a89dff;font-weight:700;font-size:10px}.go:hover{background:#a99dfc}
+.tiles-status{height:19px;padding:3px 7px;color:#747988;background:#121319;font-size:9px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+@media(max-width:860px){.pane-title{display:none}.global-bar{gap:5px;padding:0 6px}.brand{display:none}.pane-toolbar{gap:3px;padding:0 3px}button{min-width:25px;padding:0 5px}.global-action{font-size:9px}}
+</style></head><body>
+<div class="global-bar"><span class="brand">MoCcount</span><span class="group-label" id="mode">Мульти-запуск</span><button class="global-action" id="pin-window" title="Закрепить окно поверх остальных">Закрепить</button><button class="global-action" id="sync-actions" data-enabled="false" title="Повторять действия во всех профилях">Действия выкл.</button></div>
+<div id="profile-tiles" class="profile-tiles"></div>
+<script>
 const groupId = new URLSearchParams(location.search).get('group') || '';
 const api = window.moccountGroup;
-const address = document.getElementById('address');
-const navigate = () => { const value = address.value.trim(); if(value) void api.navigate(groupId, value); };
-document.getElementById('back').addEventListener('click', () => void api.back(groupId));
-document.getElementById('forward').addEventListener('click', () => void api.forward(groupId));
-document.getElementById('reload').addEventListener('click', () => void api.reload(groupId));
-document.getElementById('go').addEventListener('click', navigate);
+const tiles = document.getElementById('profile-tiles');
+const modeLabel = document.getElementById('mode');
 const syncButton = document.getElementById('sync-actions');
+const pinButton = document.getElementById('pin-window');
+
+window.renderProfiles = (profiles, layoutMode, alwaysOnTop, syncEnabled) => {
+  modeLabel.textContent = layoutMode === 'tiled' ? 'Плитки · ' + profiles.length : 'Управление · ' + profiles.length;
+  pinButton.textContent = alwaysOnTop ? 'Закреплено ✓' : 'Закрепить';
+  pinButton.classList.toggle('active', !!alwaysOnTop);
+  syncButton.dataset.enabled = String(!!syncEnabled);
+  syncButton.textContent = syncEnabled ? 'Действия вкл.' : 'Действия выкл.';
+  syncButton.style.display = profiles.length > 1 ? 'inline-flex' : 'none';
+  tiles.style.gridTemplateColumns = layoutMode === 'tiled' ? 'repeat(' + Math.ceil(Math.sqrt(profiles.length)) + ',minmax(0,1fr))' : 'minmax(0,1fr)';
+  tiles.style.gridTemplateRows = layoutMode === 'tiled' ? 'repeat(' + Math.ceil(profiles.length / Math.ceil(Math.sqrt(profiles.length))) + ',minmax(0,1fr))' : 'minmax(0,1fr)';
+  tiles.innerHTML = '';
+  profiles.forEach((profile) => {
+    const pane = document.createElement('section');
+    pane.className = 'profile-pane';
+    pane.dataset.profileId = profile.id;
+    if (layoutMode === 'focus' && !profile.leader) pane.style.display = 'none';
+    const toolbar = document.createElement('div');
+    toolbar.className = 'pane-toolbar';
+    const title = document.createElement('span');
+    title.className = 'pane-title';
+    const dot = document.createElement('span');
+    dot.className = 'pane-dot';
+    dot.style.background = profile.color || '#9486f4';
+    title.append(dot, document.createTextNode(profile.name));
+    const makeButton = (action, text, titleText) => {
+      const button = document.createElement('button');
+      button.dataset.action = action;
+      button.title = titleText;
+      button.setAttribute('aria-label', titleText);
+      button.textContent = text;
+      return button;
+    };
+    toolbar.append(title, makeButton('back', '←', 'Назад'), makeButton('forward', '→', 'Вперёд'), makeButton('reload', '↻', 'Обновить'));
+    const address = document.createElement('input');
+    address.className = 'address';
+    address.dataset.address = 'true';
+    address.type = 'text';
+    address.autocomplete = 'off';
+    address.spellcheck = false;
+    address.setAttribute('aria-label', 'Адрес или поисковый запрос — ' + profile.name);
+    address.placeholder = 'Адрес или поисковый запрос';
+    address.value = profile.url || '';
+    toolbar.append(address, makeButton('go', '↵', 'Перейти'));
+    toolbar.addEventListener('click', (event) => {
+      const button = event.target.closest('button[data-action]');
+      if (!button) return;
+      const action = button.dataset.action;
+      if (action === 'go') {
+        if (address.value.trim()) void api.navigate(groupId, profile.id, address.value);
+      } else if (action === 'back') void api.back(groupId, profile.id);
+      else if (action === 'forward') void api.forward(groupId, profile.id);
+      else if (action === 'reload') void api.reload(groupId, profile.id);
+    });
+    address.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        if (address.value.trim()) void api.navigate(groupId, profile.id, address.value);
+      }
+    });
+    const status = document.createElement('div');
+    status.className = 'tiles-status';
+    status.textContent = profile.status || 'Готов';
+    pane.append(toolbar, status);
+    tiles.append(pane);
+  });
+};
+
+pinButton.addEventListener('click', async () => {
+  try {
+    const next = await api.toggleAlwaysOnTop(groupId);
+    pinButton.textContent = next ? 'Закреплено ✓' : 'Закрепить';
+    pinButton.classList.toggle('active', next);
+  } catch { window.alert('Не удалось изменить закрепление окна.'); }
+});
 syncButton.addEventListener('click', async () => {
   const enabled = syncButton.dataset.enabled === 'true';
-  if (!enabled && !window.confirm('Включить повторение кликов и обычного текста во всех профилях? Парольные поля не копируются. Внимание: отправка форм, покупки и удаление могут повториться в каждой сессии.')) return;
+  if (!enabled && !window.confirm('Включить повторение кликов и обычного текста во всех профилях? Парольные поля не копируются. Отправка форм и покупки могут повториться в каждой сессии.')) return;
   try {
     const next = await api.setInteractionSync(groupId, !enabled);
     syncButton.dataset.enabled = String(next);
     syncButton.textContent = next ? 'Действия вкл.' : 'Действия выкл.';
-  } catch { window.alert('Не удалось изменить режим синхронизации действий.'); }
+    syncButton.classList.toggle('active', next);
+  } catch { window.alert('Не удалось изменить синхронизацию действий.'); }
 });
-address.addEventListener('keydown', (event) => { if(event.key === 'Enter'){event.preventDefault();navigate();} });
-api.onUrlChange((url) => { if(document.activeElement !== address) address.value = url; });
+api.onUrlChange(({ profileId, url }) => {
+  const pane = tiles.querySelector('[data-profile-id="' + CSS.escape(profileId) + '"]');
+  const address = pane && pane.querySelector('input[data-address]');
+  if (address && document.activeElement !== address) address.value = url;
+});
+const initialProfiles = /*PANE_CONFIG*/;
+window.renderProfiles(initialProfiles, /*LAYOUT_MODE*/, /*PINNED*/, false);
 </script></body></html>`;
 
 function safeUrl(value: string): string {

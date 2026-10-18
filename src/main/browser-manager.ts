@@ -125,7 +125,7 @@ function updateGroupChrome(group: BrowserGroup) {
   const columns = group.isMulti ? Math.ceil(Math.sqrt(items.length)) : 1;
   const labels = items.map(({ profile }) => {
     const color = /^#[0-9a-f]{6}$/i.test(profile.color) ? profile.color : '#9486f4';
-    return `<div class="pane-label" title="${escapeHtml(profile.name)}"><span class="pane-dot" style="background:${color}"></span>${escapeHtml(profile.name)}${profile.id === profiles[0].id ? ' · управляющий' : ' · фон'}</div>`;
+    return `<div class="pane-label" title="${escapeHtml(profile.name)}"><span class="pane-dot" style="background:${color}"></span>${escapeHtml(profile.name)}${profile.id === items[0]?.profile.id ? ' · управляющий' : ' · фон'}</div>`;
   }).join('');
   const mode = group.isMulti ? `Управление · ${items.length}` : 'Одиночный профиль';
   const script = `const labels=document.getElementById('pane-labels'); if(labels){labels.style.gridTemplateColumns=${JSON.stringify(`repeat(${columns},minmax(0,1fr))`)}; labels.innerHTML=${JSON.stringify(labels)};} const mode=document.getElementById('mode'); if(mode) mode.textContent=${JSON.stringify(mode)}; const sync=document.getElementById('sync-actions'); if(sync){sync.style.display=${JSON.stringify(group.isMulti ? 'inline-flex' : 'none')}; sync.dataset.enabled=${JSON.stringify(String(group.syncInteractions))}; sync.textContent=${JSON.stringify(group.syncInteractions ? 'Действия вкл.' : 'Действия выкл.')};}`;

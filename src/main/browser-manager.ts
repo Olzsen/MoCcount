@@ -10,6 +10,7 @@ interface BrowserGroup {
   views: Map<string, GroupView>;
   lastSynchronizedUrl: string;
   isMulti: boolean;
+  syncInteractions: boolean;
   closing: boolean;
 }
 const running = new Map<string, RunningProfile>();
@@ -33,7 +34,7 @@ button:hover{background:#303441;border-color:#4a4e60}button:active{transform:sca
 <span class="brand">MoCcount</span><span class="group-label" id="mode">Профиль</span>
 <button id="back" title="Назад" aria-label="Назад">←</button><button id="forward" title="Вперёд" aria-label="Вперёд">→</button><button id="reload" title="Обновить" aria-label="Обновить">↻</button>
 <input id="address" class="address" autocomplete="off" spellcheck="false" placeholder="Введите адрес или поисковый запрос" aria-label="Адрес или поисковый запрос">
-<button id="go" class="go">Перейти</button>
+<button id="go" class="go">Перейти</button><button id="sync-actions" style="display:none" data-enabled="false" title="Повторять клики и обычный текст во всех окнах">Действия выкл.</button>
 </div><div id="pane-labels" class="pane-labels"><!--PANE_LABELS--></div><script>
 const groupId = new URLSearchParams(location.search).get('group') || '';
 const api = window.moccountGroup;
@@ -43,6 +44,16 @@ document.getElementById('back').addEventListener('click', () => void api.back(gr
 document.getElementById('forward').addEventListener('click', () => void api.forward(groupId));
 document.getElementById('reload').addEventListener('click', () => void api.reload(groupId));
 document.getElementById('go').addEventListener('click', navigate);
+const syncButton = document.getElementById('sync-actions');
+syncButton.addEventListener('click', async () => {
+  const enabled = syncButton.dataset.enabled === 'true';
+  if (!enabled && !window.confirm('Включить повторение кликов и обычного текста во всех профилях? Парольные поля не копируются. Внимание: отправка форм, покупки и удаление могут повториться в каждой сессии.')) return;
+  try {
+    const next = await api.setInteractionSync(groupId, !enabled);
+    syncButton.dataset.enabled = String(next);
+    syncButton.textContent = next ? 'Действия вкл.' : 'Действия выкл.';
+  } catch { window.alert('Не удалось изменить режим синхронизации действий.'); }
+});
 address.addEventListener('keydown', (event) => { if(event.key === 'Enter'){event.preventDefault();navigate();} });
 api.onUrlChange((url) => { if(document.activeElement !== address) address.value = url; });
 </script></body></html>`;
@@ -123,7 +134,7 @@ function updateGroupChrome(group: BrowserGroup) {
     return `<div class="pane-label" title="${escapeHtml(profile.name)}"><span class="pane-dot" style="background:${color}"></span>${escapeHtml(profile.name)}</div>`;
   }).join('');
   const mode = group.isMulti ? `Мульти · ${items.length}` : 'Одиночный профиль';
-  const script = `const labels=document.getElementById('pane-labels'); if(labels){labels.style.gridTemplateColumns=${JSON.stringify(`repeat(${columns},minmax(0,1fr))`)}; labels.innerHTML=${JSON.stringify(labels)};} const mode=document.getElementById('mode'); if(mode) mode.textContent=${JSON.stringify(mode)};`;
+  const script = `const labels=document.getElementById('pane-labels'); if(labels){labels.style.gridTemplateColumns=${JSON.stringify(`repeat(${columns},minmax(0,1fr))`)}; labels.innerHTML=${JSON.stringify(labels)};} const mode=document.getElementById('mode'); if(mode) mode.textContent=${JSON.stringify(mode)}; const sync=document.getElementById('sync-actions'); if(sync){sync.style.display=${JSON.stringify(group.isMulti ? 'inline-flex' : 'none')}; sync.dataset.enabled=${JSON.stringify(String(group.syncInteractions))}; sync.textContent=${JSON.stringify(group.syncInteractions ? 'Действия вкл.' : 'Действия выкл.')};}`;
   void group.window.webContents.executeJavaScript(script).catch(() => undefined);
 }
 
@@ -172,7 +183,7 @@ async function openBrowserGroup(profiles: BrowserProfile[], isMulti: boolean): P
       sandbox: true,
     },
   });
-  const group: BrowserGroup = { id: groupId, window, views: new Map(), lastSynchronizedUrl: startUrl, isMulti, closing: false };
+  const group: BrowserGroup = { id: groupId, window, views: new Map(), lastSynchronizedUrl: startUrl, isMulti, syncInteractions: false, closing: false };
   groups.set(groupId, group);
   window.on('resize', () => layoutGroup(group));
   window.on('closed', () => {
@@ -222,6 +233,7 @@ async function openBrowserGroup(profiles: BrowserProfile[], isMulti: boolean): P
     const controllerHtml = GROUP_CONTROLLER_HTML
       .replace("const groupId = new URLSearchParams(location.search).get('group') || '';", `const groupId = '${groupId}';`)
       .replace('id="mode">Профиль', `id="mode">${isMulti ? `Мульти · ${profiles.length}` : 'Одиночный профиль'}`)
+      .replace('id="sync-actions" style="display:none"', `id="sync-actions" style="display:${isMulti ? 'inline-flex' : 'none'}"`)
       .replace('id="pane-labels" class="pane-labels"><!--PANE_LABELS-->', `id="pane-labels" class="pane-labels" style="grid-template-columns:repeat(${columns},minmax(0,1fr))">${paneLabels}`);
     await window.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(controllerHtml)}`);
     layoutGroup(group);
@@ -263,10 +275,42 @@ export function stopProfile(id: string): void {
     return;
   }
   group.isMulti = group.views.size > 1;
+  if (!group.isMulti) group.syncInteractions = false;
   const remaining = [...group.views.values()].map((view) => view.profile.name);
   group.window.setTitle(group.isMulti ? `MoCcount — Мульти-профиль (${group.views.size})` : `MoCcount — ${remaining[0]}`);
   layoutGroup(group);
   updateGroupChrome(group);
+}
+
+export function setGroupInteractionSync(groupId: string, enabled: boolean): boolean {
+  const group = groups.get(groupId);
+  if (!group || group.closing || !group.isMulti || group.views.size < 2) return false;
+  group.syncInteractions = enabled;
+  return group.syncInteractions;
+}
+
+export function relayGroupInteraction(groupId: string, profileId: string, senderWebContentsId: number, value: unknown): void {
+  const group = groups.get(groupId);
+  if (!group || !group.syncInteractions || group.closing || !group.isMulti) return;
+  const source = group.views.get(profileId);
+  if (!source || source.view.webContents.isDestroyed() || source.view.webContents.id !== senderWebContentsId) return;
+  if (!value || typeof value !== 'object') return;
+  const action = value as { kind?: unknown; selector?: unknown; value?: unknown };
+  if (typeof action.selector !== 'string' || !action.selector.trim() || action.selector.length > 1200) return;
+  if (action.kind !== 'click' && action.kind !== 'value') return;
+  if (action.kind === 'value' && (typeof action.value !== 'string' || action.value.length > 8000)) return;
+  const selector = JSON.stringify(action.selector);
+  let script: string;
+  if (action.kind === 'click') {
+    script = `(() => { const target=document.querySelector(${selector}); if(!(target instanceof HTMLElement) || target.hasAttribute('disabled') || target.getAttribute('aria-disabled')==='true') return; if(target instanceof HTMLInputElement && ['password','file','hidden'].includes(target.type)) return; target.click(); })()`;
+  } else {
+    const valueJson = JSON.stringify(action.value);
+    script = `(() => { const target=document.querySelector(${selector}); if(!(target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement)) return; if(target instanceof HTMLInputElement && ['password','file','hidden','checkbox','radio'].includes(target.type)) return; const descriptor=Object.getOwnPropertyDescriptor(Object.getPrototypeOf(target),'value'); if(descriptor?.set) descriptor.set.call(target,${valueJson}); else target.value=${valueJson}; target.dispatchEvent(new Event('input',{bubbles:true,composed:true})); if(target instanceof HTMLSelectElement) target.dispatchEvent(new Event('change',{bubbles:true,composed:true})); })()`;
+  }
+  for (const [id, item] of group.views) {
+    if (id === profileId || item.view.webContents.isDestroyed()) continue;
+    void item.view.webContents.executeJavaScript(script).catch(() => undefined);
+  }
 }
 
 export function navigateGroup(groupId: string, value: string): void {

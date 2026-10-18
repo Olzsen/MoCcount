@@ -3,11 +3,12 @@
   "version": "0.1.0",
   "private": true,
   "description": "Desktop manager for isolated Chromium browser profiles",
-  "main": "dist/main/main.js",
+  "main": "dist/main/main/main.js",
   "scripts": {
-    "dev": "concurrently -k \"vite --host 127.0.0.1\" \"wait-on http://127.0.0.1:5173 && electron .\"",
+    "dev": "npm run build:main && concurrently -k \"vite --host 127.0.0.1\" \"wait-on http://127.0.0.1:5173 && electron .\"",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.main.json --noEmit",
-    "build": "npm run typecheck && vite build",
+    "build:main": "tsc -p tsconfig.main.json",
+    "build": "npm run typecheck && npm run build:main && vite build",
     "start": "electron .",
     "package": "npm run build && electron-builder"
   },

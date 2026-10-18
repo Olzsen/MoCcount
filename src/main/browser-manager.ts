@@ -15,6 +15,8 @@ const running = new Map<string, RunningProfile>();
 const groups = new Map<string, BrowserGroup>();
 const proxyCredentials = new Map<string, { username: string; password: string }>();
 
+function partitionFor(id: string) { return `persist:moccount-${id}`; }
+
 const GROUP_CONTROLLER_HTML = `<!doctype html>
 <html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>MoCcount</title><style>

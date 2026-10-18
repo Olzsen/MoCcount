@@ -19,6 +19,7 @@ declare global {
       back(groupId: string): Promise<void>;
       forward(groupId: string): Promise<void>;
       reload(groupId: string): Promise<void>;
+      setInteractionSync(groupId: string, enabled: boolean): Promise<boolean>;
       onUrlChange(callback: (url: string) => void): () => void;
     };
   }

@@ -104,24 +104,18 @@ function normalizeAddressOrSearch(value: string): string {
 
 function layoutGroup(group: BrowserGroup) {
   if (group.window.isDestroyed()) return;
-  const [width, totalHeight] = group.window.getContentSize();
-  const top = 88;
-  const contentHeight = Math.max(120, totalHeight - top);
   const items = [...group.views.values()];
   if (!items.length) return;
-  const columns = group.isMulti ? Math.ceil(Math.sqrt(items.length)) : 1;
-  const rows = Math.ceil(items.length / columns);
+  const [width, totalHeight] = group.window.getContentSize();
+  const toolbarHeight = 88;
+  const visibleHeight = Math.max(120, totalHeight - toolbarHeight);
+  // Keep one visible controller; follower profiles remain loaded off-screen.
   items.forEach(({ view }, index) => {
-    const column = index % columns;
-    const row = Math.floor(index / columns);
-    const cellWidth = Math.floor(width / columns);
-    const cellHeight = Math.floor(contentHeight / rows);
-    view.setBounds({
-      x: column * cellWidth,
-      y: top + row * cellHeight,
-      width: column === columns - 1 ? width - column * cellWidth : cellWidth,
-      height: row === rows - 1 ? contentHeight - row * cellHeight : cellHeight,
-    });
+    if (index === 0) {
+      view.setBounds({ x: 0, y: toolbarHeight, width, height: visibleHeight });
+    } else {
+      view.setBounds({ x: -10000 - index, y: toolbarHeight, width: 1, height: 1 });
+    }
   });
 }
 
@@ -131,9 +125,9 @@ function updateGroupChrome(group: BrowserGroup) {
   const columns = group.isMulti ? Math.ceil(Math.sqrt(items.length)) : 1;
   const labels = items.map(({ profile }) => {
     const color = /^#[0-9a-f]{6}$/i.test(profile.color) ? profile.color : '#9486f4';
-    return `<div class="pane-label" title="${escapeHtml(profile.name)}"><span class="pane-dot" style="background:${color}"></span>${escapeHtml(profile.name)}</div>`;
+    return `<div class="pane-label" title="${escapeHtml(profile.name)}"><span class="pane-dot" style="background:${color}"></span>${escapeHtml(profile.name)}${profile.id === profiles[0].id ? ' · управляющий' : ' · фон'}</div>`;
   }).join('');
-  const mode = group.isMulti ? `Мульти · ${items.length}` : 'Одиночный профиль';
+  const mode = group.isMulti ? `Управление · ${items.length}` : 'Одиночный профиль';
   const script = `const labels=document.getElementById('pane-labels'); if(labels){labels.style.gridTemplateColumns=${JSON.stringify(`repeat(${columns},minmax(0,1fr))`)}; labels.innerHTML=${JSON.stringify(labels)};} const mode=document.getElementById('mode'); if(mode) mode.textContent=${JSON.stringify(mode)}; const sync=document.getElementById('sync-actions'); if(sync){sync.style.display=${JSON.stringify(group.isMulti ? 'inline-flex' : 'none')}; sync.dataset.enabled=${JSON.stringify(String(group.syncInteractions))}; sync.textContent=${JSON.stringify(group.syncInteractions ? 'Действия вкл.' : 'Действия выкл.')};}`;
   void group.window.webContents.executeJavaScript(script).catch(() => undefined);
 }
@@ -232,7 +226,7 @@ async function openBrowserGroup(profiles: BrowserProfile[], isMulti: boolean): P
     }).join('');
     const controllerHtml = GROUP_CONTROLLER_HTML
       .replace("const groupId = new URLSearchParams(location.search).get('group') || '';", `const groupId = '${groupId}';`)
-      .replace('id="mode">Профиль', `id="mode">${isMulti ? `Мульти · ${profiles.length}` : 'Одиночный профиль'}`)
+      .replace('id="mode">Профиль', `id="mode">${isMulti ? `Управление · ${profiles.length}` : 'Одиночный профиль'}`)
       .replace('id="sync-actions" style="display:none"', `id="sync-actions" style="display:${isMulti ? 'inline-flex' : 'none'}"`)
       .replace('id="pane-labels" class="pane-labels"><!--PANE_LABELS-->', `id="pane-labels" class="pane-labels" style="grid-template-columns:repeat(${columns},minmax(0,1fr))">${paneLabels}`);
     await window.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(controllerHtml)}`);
@@ -277,7 +271,7 @@ export function stopProfile(id: string): void {
   group.isMulti = group.views.size > 1;
   if (!group.isMulti) group.syncInteractions = false;
   const remaining = [...group.views.values()].map((view) => view.profile.name);
-  group.window.setTitle(group.isMulti ? `MoCcount — Мульти-профиль (${group.views.size})` : `MoCcount — ${remaining[0]}`);
+  group.window.setTitle(group.isMulti ? `MoCcount — Управление (${group.views.size})` : `MoCcount — ${remaining[0]}`);
   layoutGroup(group);
   updateGroupChrome(group);
 }

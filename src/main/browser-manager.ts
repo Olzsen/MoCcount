@@ -280,8 +280,9 @@ function userAgentForProfile(profile: BrowserProfile, ses: Session): string {
   return `Mozilla/5.0 (${os}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${chrome} Safari/537.36`;
 }
 
-async function openBrowserGroup(profiles: BrowserProfile[], isMulti: boolean): Promise<void> {
+async function openBrowserGroup(profiles: BrowserProfile[], layoutMode: 'tiled' | 'focus'): Promise<void> {
   if (!profiles.length) throw new Error('Выберите хотя бы один профиль.');
+  const isMulti = profiles.length > 1;
   const alreadyRunning = profiles.filter((p) => running.has(p.id));
   if (alreadyRunning.length) {
     const first = running.get(alreadyRunning[0].id);
@@ -291,11 +292,11 @@ async function openBrowserGroup(profiles: BrowserProfile[], isMulti: boolean): P
   const groupId = crypto.randomUUID();
   const startUrl = safeUrl(profiles[0].browser.startUrl);
   const window = new BrowserWindow({
-    width: isMulti ? Math.max(1440, ...profiles.map((p) => p.browser.width)) : profiles[0].browser.width,
-    height: isMulti ? Math.max(900, ...profiles.map((p) => p.browser.height)) : profiles[0].browser.height,
-    minWidth: isMulti ? 900 : 600,
-    minHeight: isMulti ? 620 : 480,
-    title: isMulti ? `MoCcount — Мульти-профиль (${profiles.length})` : `MoCcount — ${profiles[0].name}`,
+    width: layoutMode === 'tiled' ? Math.max(1440, ...profiles.map((p) => p.browser.width)) : (isMulti ? 1440 : profiles[0].browser.width),
+    height: layoutMode === 'tiled' ? Math.max(900, ...profiles.map((p) => p.browser.height)) : (isMulti ? 900 : profiles[0].browser.height),
+    minWidth: layoutMode === 'tiled' ? 900 : 600,
+    minHeight: layoutMode === 'tiled' ? 620 : 480,
+    title: isMulti ? `MoCcount — ${layoutMode === 'tiled' ? 'Плитки' : 'Управление'} (${profiles.length})` : `MoCcount — ${profiles[0].name}`,
     backgroundColor: '#111218',
     webPreferences: {
       preload: path.join(__dirname, '../preload/group-controller.js'),
@@ -304,7 +305,18 @@ async function openBrowserGroup(profiles: BrowserProfile[], isMulti: boolean): P
       sandbox: true,
     },
   });
-  const group: BrowserGroup = { id: groupId, window, views: new Map(), lastSynchronizedUrl: startUrl, isMulti, syncInteractions: false, initializing: true, closing: false };
+  const group: BrowserGroup = {
+    id: groupId,
+    window,
+    views: new Map(),
+    lastSynchronizedUrl: startUrl,
+    isMulti,
+    layoutMode,
+    alwaysOnTop: false,
+    syncInteractions: false,
+    initializing: true,
+    closing: false,
+  };
   groups.set(groupId, group);
   window.on('resize', () => layoutGroup(group));
   window.on('closed', () => {
@@ -351,48 +363,47 @@ async function openBrowserGroup(profiles: BrowserProfile[], isMulti: boolean): P
       view.webContents.on('did-navigate-in-page', (_event, url) => syncGroupNavigation(group, profile.id, url));
     }
 
-    const columns = isMulti ? Math.ceil(Math.sqrt(profiles.length)) : 1;
-    const paneLabels = profiles.map((profile) => {
-      const color = /^#[0-9a-f]{6}$/i.test(profile.color) ? profile.color : '#9486f4';
-      return `<div class="pane-label" title="${escapeHtml(profile.name)}"><span class="pane-dot" style="background:${color}"></span>${escapeHtml(profile.name)}</div>`;
-    }).join('');
+    const safeJson = (value: unknown) => JSON.stringify(value).replace(/</g, '\\u003c');
     const controllerHtml = GROUP_CONTROLLER_HTML
       .replace("const groupId = new URLSearchParams(location.search).get('group') || '';", `const groupId = '${groupId}';`)
-      .replace('id="mode">Профиль', `id="mode">${isMulti ? `Управление · ${profiles.length}` : 'Одиночный профиль'}`)
-      .replace('id="sync-actions" style="display:none"', `id="sync-actions" style="display:${isMulti ? 'inline-flex' : 'none'}"`)
-      .replace('id="pane-labels" class="pane-labels"><!--PANE_LABELS-->', `id="pane-labels" class="pane-labels" style="grid-template-columns:repeat(${columns},minmax(0,1fr))">${paneLabels}`);
+      .replace('const initialProfiles = /*PANE_CONFIG*/;', `const initialProfiles = ${safeJson(groupPaneConfig(group))};`)
+      .replace('/*LAYOUT_MODE*/', JSON.stringify(layoutMode))
+      .replace('/*PINNED*/', 'false');
     await window.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(controllerHtml)}`);
     layoutGroup(group);
-    // Load each isolated session independently. ERR_ABORTED is common when a
-    // navigation is superseded/redirected; it must not tear down the whole group.
-    const results = await Promise.all([...group.views.values()].map(async ({ view }) => {
+
+    const results = await Promise.all([...group.views.entries()].map(async ([id, { profile, view }]) => {
+      const targetUrl = layoutMode === 'tiled' ? safeUrl(profile.browser.startUrl) : startUrl;
       try {
-        await view.webContents.loadURL(startUrl);
-        return null;
+        await view.webContents.loadURL(targetUrl);
+        return { id, error: null as string | null };
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        if (message.includes('ERR_ABORTED') || view.webContents.isDestroyed()) return null;
-        return message;
+        if (message.includes('ERR_ABORTED') || view.webContents.isDestroyed()) return { id, error: null };
+        return { id, error: message };
       }
     }));
-    const failures = results.filter((message): message is string => Boolean(message));
+    const failures = results.filter((result) => result.error);
     if (failures.length === group.views.size) {
-      throw new Error(`Не удалось загрузить страницу ни в одном профиле: ${failures[0]}`);
+      throw new Error(`Не удалось загрузить страницы профилей: ${failures[0].error}`);
     }
+
     group.initializing = false;
     const leaderId = group.views.keys().next().value as string | undefined;
     const leader = group.views.values().next().value as GroupView | undefined;
     const actualUrl = leader?.view.webContents.getURL() || startUrl;
     group.lastSynchronizedUrl = actualUrl;
-    updateGroupAddress(group, actualUrl);
-    // Reconcile profiles that were redirected or cancelled while the group
-    // was initializing, but do not let startup navigation errors close the window.
-    for (const [id, item] of group.views) {
-      if (id === leaderId || item.view.webContents.isDestroyed()) continue;
-      if (item.view.webContents.getURL() !== actualUrl) {
-        void item.view.webContents.loadURL(actualUrl).catch(() => undefined);
+    if (layoutMode === 'focus') {
+      for (const [id, item] of group.views) {
+        if (id === leaderId || item.view.webContents.isDestroyed()) continue;
+        if (item.view.webContents.getURL() !== actualUrl) void item.view.webContents.loadURL(actualUrl).catch(() => undefined);
       }
     }
+    for (const [id, item] of group.views) {
+      const url = item.view.webContents.getURL() || item.profile.browser.startUrl;
+      updateGroupAddress(group, id, url);
+    }
+    updateGroupChrome(group);
   } catch (error) {
     if (!window.isDestroyed()) window.destroy();
     groups.delete(groupId);
@@ -404,12 +415,12 @@ async function openBrowserGroup(profiles: BrowserProfile[], isMulti: boolean): P
 export async function launchProfile(profile: BrowserProfile): Promise<void> {
   const current = running.get(profile.id);
   if (current && !current.window.isDestroyed()) { current.window.focus(); return; }
-  await openBrowserGroup([profile], false);
+  await openBrowserGroup([profile], 'focus');
 }
 
-export async function launchProfilesTogether(profiles: BrowserProfile[]): Promise<void> {
+export async function launchProfilesTogether(profiles: BrowserProfile[], layoutMode: 'tiled' | 'focus' = 'focus'): Promise<void> {
   if (profiles.length < 2) throw new Error('Для мульти-режима выберите не менее двух профилей.');
-  await openBrowserGroup(profiles, true);
+  await openBrowserGroup(profiles, layoutMode);
 }
 
 export function stopProfile(id: string): void {

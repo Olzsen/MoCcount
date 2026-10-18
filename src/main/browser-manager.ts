@@ -6,6 +6,31 @@ const running = new Map<string, RunningProfile>();
 const proxyCredentials = new Map<string, { username: string; password: string }>();
 
 function partitionFor(id: string) { return `persist:moccount-${id}`; }
+const browserToolbarScript = String.raw`(() => {
+  if (document.getElementById('moccount-toolbar-host')) return;
+  const host = document.createElement('div');
+  host.id = 'moccount-toolbar-host';
+  const shadow = host.attachShadow({ mode: 'open' });
+  const style = document.createElement('style');
+  style.textContent = ":host{all:initial;position:fixed;z-index:2147483647;top:0;left:0;right:0;height:48px;display:block;font:13px -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#e8eaf0} .bar{height:48px;box-sizing:border-box;display:flex;align-items:center;gap:7px;padding:0 12px;background:#171920;border-bottom:1px solid #343744;box-shadow:0 2px 10px #0005}button{height:30px;min-width:30px;border:1px solid #363a46;border-radius:7px;background:#222630;color:#dfe2eb;font-size:16px;cursor:pointer}button:hover{background:#303544}.address{height:30px;box-sizing:border-box;flex:1;min-width:40px;border:1px solid #393d4a;border-radius:8px;background:#0f1116;color:#f0f1f5;padding:0 11px;outline:none;font:12px -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}.address:focus{border-color:#9285f6}.brand{font-weight:700;color:#a99bff;white-space:nowrap;padding:0 3px}.go{background:#8e80ef;color:#151321;border-color:#a99dff;font-weight:700;padding:0 12px}";
+  const bar = document.createElement('div'); bar.className = 'bar';
+  const brand = document.createElement('span'); brand.className = 'brand'; brand.textContent = 'MoCcount';
+  const back = document.createElement('button'); back.title = 'Назад'; back.textContent = '‹';
+  const forward = document.createElement('button'); forward.title = 'Вперёд'; forward.textContent = '›';
+  const reload = document.createElement('button'); reload.title = 'Обновить'; reload.textContent = '↻';
+  const address = document.createElement('input'); address.className = 'address'; address.type = 'text'; address.setAttribute('aria-label', 'Адрес или поисковый запрос'); address.placeholder = 'Введите адрес или поисковый запрос';
+  const go = document.createElement('button'); go.className = 'go'; go.textContent = 'Перейти';
+  const navigate = () => { const value = address.value.trim(); if (!value) return; let target; if (/^[a-zA-Z][a-zA-Z\\d+.-]*:/.test(value)) target = value; else if (/^(localhost|\\d{1,3}(\\.\\d{1,3}){3}|[^\\s]+\\.[^\\s]+)(:\\d+)?(\\/.*)?$/i.test(value)) target = 'https://' + value; else target = 'https://www.google.com/search?q=' + encodeURIComponent(value); try { const parsed = new URL(target); if (parsed.protocol === 'http:' || parsed.protocol === 'https:') location.href = parsed.href; } catch { address.focus(); } };
+  back.onclick = () => history.back(); forward.onclick = () => history.forward(); reload.onclick = () => location.reload(); go.onclick = navigate;
+  address.addEventListener('keydown', (event) => { if (event.key === 'Enter') navigate(); });
+  bar.append(brand, back, forward, reload, address, go); shadow.append(style, bar); document.documentElement.append(host);
+  const offset = () => { document.documentElement.style.scrollPaddingTop = '48px'; document.body.style.paddingTop = '48px'; };
+  offset();
+  window.addEventListener('pageshow', offset);
+  window.addEventListener('popstate', () => { address.value = location.href; });
+  address.value = location.href;
+})();`;
+
 
 function safeUrl(value: string): string {
   const candidate = value.trim();
@@ -60,6 +85,8 @@ export async function launchProfile(profile: BrowserProfile): Promise<void> {
     },
   });
   running.set(profile.id, { window: win, session: ses });
+  win.webContents.on('did-finish-load', () => { void win.webContents.executeJavaScript(browserToolbarScript).catch(() => undefined); });
+  win.webContents.on('did-navigate', (_event, url) => { void win.webContents.executeJavaScript(\"const field=document.querySelector('#moccount-toolbar-host')?.shadowRoot?.querySelector('input'); if(field) field.value = \" + JSON.stringify(url) + \";\").catch(() => undefined); });
   win.on('closed', () => running.delete(profile.id));
   try {
     await win.loadURL(safeUrl(profile.browser.startUrl));

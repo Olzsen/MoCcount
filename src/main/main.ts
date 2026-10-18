@@ -6,7 +6,7 @@ import { autoUpdater } from 'electron-updater';
 import { profileDraftSchema } from '../shared/validation';
 import { BrowserProfile, ProfileDraft, ProfileSummary } from '../shared/types';
 import { createProfile, deleteProfile, listProfiles, updateProfile } from './store';
-import { backGroup, checkProxy, clearSiteData, forwardGroup, getRunningIds, installProxyAuthHandler, launchProfile, launchProfilesTogether, navigateGroup, relayGroupInteraction, reloadGroup, setGroupAlwaysOnTop, setGroupInteractionSync, stopProfile } from './browser-manager';
+import { backGroup, checkProxy, clearSiteData, forwardGroup, getRunningIds, installProxyAuthHandler, launchProfile, launchProfilesTogether, navigateGroup, relayGroupInteraction, reloadGroup, toggleGroupAlwaysOnTop, setGroupInteractionSync, stopProfile } from './browser-manager';
 
 const isDev = !app.isPackaged;
 const execFileAsync = promisify(execFile);
@@ -88,7 +88,7 @@ function createDesktopShortcut(id: string): { ok: boolean; message: string } {
   if (!profile) return { ok: false, message: 'Профиль не найден.' };
   const safeName = profile.name.replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').trim().slice(0, 90) || 'MoCcount';
   const shortcutPath = path.join(app.getPath('desktop'), `MoCcount — ${safeName}.lnk`);
-  const args = app.isPackaged ? [`--moccount-profile=${id}`] : [app.getAppPath(), `--moccount-profile=${id}`];
+  const args = app.isPackaged ? `--moccount-profile=${id}` : `\"${app.getAppPath().replace(/\"/g, '\\\"')}\" --moccount-profile=${id}`;
   const ok = shell.writeShortcutLink(shortcutPath, 'create', {
     target: process.execPath,
     args,
@@ -183,7 +183,7 @@ function registerIpc() {
   ipcMain.handle('group:reload', (_event, id: unknown, profileId: unknown) => { if (typeof id === 'string' && typeof profileId === 'string') reloadGroup(id, profileId); });
   ipcMain.handle('group:toggle-always-on-top', (_event, id: unknown) => {
     if (typeof id !== 'string') throw new Error('Некорректное окно браузера.');
-    return setGroupAlwaysOnTop(id);
+    return toggleGroupAlwaysOnTop(id);
   });
   ipcMain.handle('group:interaction-sync', (_event, id: unknown, enabled: unknown) => {
     if (typeof id !== 'string' || typeof enabled !== 'boolean') return false;

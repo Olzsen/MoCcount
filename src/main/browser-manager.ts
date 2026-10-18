@@ -10,6 +10,7 @@ interface BrowserGroup {
   views: Map<string, GroupView>;
   lastSynchronizedUrl: string;
   isMulti: boolean;
+  closing: boolean;
 }
 const running = new Map<string, RunningProfile>();
 const groups = new Map<string, BrowserGroup>();
@@ -158,7 +159,7 @@ async function openBrowserGroup(profiles: BrowserProfile[], isMulti: boolean): P
       sandbox: true,
     },
   });
-  const group: BrowserGroup = { id: groupId, window, views: new Map(), lastSynchronizedUrl: startUrl, isMulti };
+  const group: BrowserGroup = { id: groupId, window, views: new Map(), lastSynchronizedUrl: startUrl, isMulti, closing: false };
   groups.set(groupId, group);
   window.on('resize', () => layoutGroup(group));
   window.on('closed', () => {
@@ -236,7 +237,10 @@ export function stopProfile(id: string): void {
   const entry = running.get(id);
   if (!entry) return;
   const group = groups.get(entry.groupId);
-  if (group && !group.window.isDestroyed()) group.window.close();
+  if (group && !group.window.isDestroyed() && !group.closing) {
+    group.closing = true;
+    group.window.close();
+  }
 }
 
 export function navigateGroup(groupId: string, value: string): void {

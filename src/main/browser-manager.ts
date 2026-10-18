@@ -69,7 +69,7 @@ export async function launchProfile(profile: BrowserProfile): Promise<void> {
   const partition = partitionFor(profile.id);
   const ses = session.fromPartition(partition, { cache: true });
   await configureSession(profile, partition, ses);
-  if (profile.browser.userAgent.trim()) ses.setUserAgent(profile.browser.userAgent.trim());
+  if ((profile.browser.userAgent ?? '').trim()) ses.setUserAgent(profile.browser.userAgent.trim());
   const win = new BrowserWindow({
     width: profile.browser.width,
     height: profile.browser.height,
@@ -78,7 +78,7 @@ export async function launchProfile(profile: BrowserProfile): Promise<void> {
     webPreferences: {
       partition,
       preload: require('node:path').join(__dirname, '../preload/fingerprint.js'),
-      additionalArguments: [`--moccount-fingerprint=${Buffer.from(JSON.stringify({ hardwareConcurrency: profile.browser.hardwareConcurrency, deviceMemory: profile.browser.deviceMemory, locale: profile.browser.locale, timezone: profile.browser.timezone })).toString('base64')}`],
+      additionalArguments: [`--moccount-fingerprint=${Buffer.from(JSON.stringify({ hardwareConcurrency: profile.browser.hardwareConcurrency ?? 8, deviceMemory: profile.browser.deviceMemory ?? 8, locale: profile.browser.locale, timezone: profile.browser.timezone })).toString('base64')}`],
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,

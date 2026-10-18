@@ -159,6 +159,21 @@ function syncGroupNavigation(group: BrowserGroup, sourceId: string, url: string)
   }
 }
 
+function userAgentForProfile(profile: BrowserProfile, ses: Session): string {
+  const custom = (profile.browser.userAgent ?? '').trim();
+  if (custom) return custom;
+  const selectedPlatform = profile.browser.osPlatform ?? '';
+  const current = ses.getUserAgent().replace(/\\sElectron\\/[\\d.]+/g, '');
+  if (!selectedPlatform) return current;
+  const chrome = process.versions.chrome || current.match(/Chrome\\/([^ ]+)/)?.[1] || 'Chromium';
+  const os = selectedPlatform === 'Win32'
+    ? 'Windows NT 10.0; Win64; x64'
+    : selectedPlatform === 'MacIntel'
+      ? 'Macintosh; Intel Mac OS X 10_15_7'
+      : 'X11; Linux x86_64';
+  return `Mozilla/5.0 (${os}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${chrome} Safari/537.36`;
+}
+
 async function openBrowserGroup(profiles: BrowserProfile[], isMulti: boolean): Promise<void> {
   if (!profiles.length) throw new Error('Выберите хотя бы один профиль.');
   const alreadyRunning = profiles.filter((p) => running.has(p.id));
@@ -199,13 +214,18 @@ async function openBrowserGroup(profiles: BrowserProfile[], isMulti: boolean): P
       const partition = partitionFor(profile.id);
       const ses = session.fromPartition(partition, { cache: true });
       await configureSession(profile, partition, ses);
-      const userAgent = (profile.browser.userAgent ?? '').trim() || ses.getUserAgent();
+      const userAgent = userAgentForProfile(profile, ses);
       ses.setUserAgent(userAgent, profile.browser.locale);
       const fingerprint = Buffer.from(JSON.stringify({
         hardwareConcurrency: profile.browser.hardwareConcurrency ?? 8,
         deviceMemory: profile.browser.deviceMemory ?? 8,
         locale: profile.browser.locale,
         timezone: profile.browser.timezone,
+        osPlatform: profile.browser.osPlatform ?? '',
+        screenWidth: profile.browser.screenWidth ?? 0,
+        screenHeight: profile.browser.screenHeight ?? 0,
+        webglVendor: profile.browser.webglVendor ?? '',
+        webglRenderer: profile.browser.webglRenderer ?? '',
       })).toString('base64');
       const view = new WebContentsView({
         webPreferences: {

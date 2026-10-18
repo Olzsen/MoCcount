@@ -15,6 +15,9 @@ export interface BrowserSettings {
   height: number;
   locale: string;
   timezone: string;
+  userAgent: string;
+  hardwareConcurrency: number;
+  deviceMemory: number;
 }
 
 export interface BrowserProfile {

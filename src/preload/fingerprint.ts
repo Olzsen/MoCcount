@@ -1,4 +1,5 @@
 // Minimal, explicit privacy controls. These overrides run before page scripts.
+import { ipcRenderer } from 'electron';
 const arg = process.argv.find((item) => item.startsWith('--moccount-fingerprint='));
 if (arg) {
   try {
@@ -29,8 +30,6 @@ if (arg) {
 
 
 // Optional multi-profile interaction relay. It never cancels or blocks the user's events.
-import { ipcRenderer } from 'electron';
-
 const groupArg = process.argv.find((item) => item.startsWith('--moccount-group='));
 const profileArg = process.argv.find((item) => item.startsWith('--moccount-profile='));
 const groupId = groupArg?.slice('--moccount-group='.length) ?? '';

@@ -163,9 +163,9 @@ function userAgentForProfile(profile: BrowserProfile, ses: Session): string {
   const custom = (profile.browser.userAgent ?? '').trim();
   if (custom) return custom;
   const selectedPlatform = profile.browser.osPlatform ?? '';
-  const current = ses.getUserAgent().replace(/\\sElectron\\/[\\d.]+/g, '');
+  const current = ses.getUserAgent().replace(/\sElectron\/[\d.]+/g, '');
   if (!selectedPlatform) return current;
-  const chrome = process.versions.chrome || current.match(/Chrome\\/([^ ]+)/)?.[1] || 'Chromium';
+  const chrome = process.versions.chrome || current.match(/Chrome\/([^ ]+)/)?.[1] || 'Chromium';
   const os = selectedPlatform === 'Win32'
     ? 'Windows NT 10.0; Win64; x64'
     : selectedPlatform === 'MacIntel'

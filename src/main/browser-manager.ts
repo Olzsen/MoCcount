@@ -3,7 +3,7 @@ import { BrowserProfile, ProfileDraft } from '../shared/types';
 
 interface RunningProfile { window: BrowserWindow; session: Session }
 const running = new Map<string, RunningProfile>();
-const proxyLoginRegistered = new Set<string>();
+const proxyCredentials = new Map<string, { username: string; password: string }>();
 
 function partitionFor(id: string) { return `persist:moccount-${id}`; }
 
@@ -22,14 +22,20 @@ function proxyRule(profile: BrowserProfile): string | undefined {
 }
 
 function configureProxyAuth(ses: Session, partition: string, username?: string, password?: string) {
-  if ((!username && !password) || proxyLoginRegistered.has(partition)) return;
-  proxyLoginRegistered.add(partition);
-  ses.on('login', (event, _details, authInfo, callback) => {
-    if (authInfo.isProxy) {
-      event.preventDefault();
-      callback(username ?? '', password ?? '');
-    }
-  });
+  if (!username && !password) {
+    proxyCredentials.delete(partition);
+    return;
+  }
+  proxyCredentials.set(partition, { username: username ?? '', password: password ?? '' });
+  // Electron exposes proxy authentication on the app-level login event, not Session#login.
+  // The global handler below routes only proxy-auth challenges to the matching profile credentials.
+}
+
+async function configureSession(profile: BrowserProfile, partition: string, ses: Session) {
+  const proxy = proxyRule(profile);
+  if (proxy) await ses.setProxy({ proxyRules: proxy });
+  else await ses.setProxy({ mode: 'system' });
+  configureProxyAuth(ses, partition, profile.proxy?.username, profile.proxy?.password);
 }
 
 export async function launchProfile(profile: BrowserProfile): Promise<void> {
@@ -37,12 +43,7 @@ export async function launchProfile(profile: BrowserProfile): Promise<void> {
   if (current && !current.window.isDestroyed()) { current.window.focus(); return; }
   const partition = partitionFor(profile.id);
   const ses = session.fromPartition(partition, { cache: true });
-  const proxy = proxyRule(profile);
-  if (proxy) await ses.setProxy({ proxyRules: proxy });
-  else await ses.setProxy({ mode: 'system' });
-  // Reuse a single handler per persistent session to avoid duplicate login listeners.
-  // Profile settings can only be edited while stopped; first initialization supplies current credentials.
-  configureProxyAuth(ses, partition, profile.proxy?.username, profile.proxy?.password);
+  await configureSession(profile, partition, ses);
   const win = new BrowserWindow({
     width: profile.browser.width,
     height: profile.browser.height,
@@ -75,6 +76,21 @@ export function stopProfile(id: string): void {
 
 export function getRunningIds(): string[] { return [...running.keys()]; }
 
+export function installProxyAuthHandler() {
+  // Register once during startup, then resolve challenges by the Session's stable partition.
+  const { app } = require('electron') as typeof import('electron');
+  app.on('login', (event: Electron.Event, webContents: Electron.WebContents, _details: unknown, authInfo: Electron.AuthInfo, callback: (username: string, password: string) => void) => {
+    if (!authInfo.isProxy) return;
+    const ses = webContents.session;
+    const matching = [...proxyCredentials.entries()].find(([partition]) => {
+      try { return session.fromPartition(partition, { cache: true }) === ses; } catch { return false; }
+    });
+    if (!matching) return;
+    event.preventDefault();
+    callback(matching[1].username, matching[1].password);
+  });
+}
+
 export async function checkProxy(draft: ProfileDraft): Promise<{ ok: boolean; message: string }> {
   if (!draft.proxy) return { ok: false, message: 'Add proxy details before testing the connection.' };
   const { host, port, type, username, password } = draft.proxy;
@@ -87,16 +103,24 @@ export async function checkProxy(draft: ProfileDraft): Promise<{ ok: boolean; me
     const scheme = type === 'socks5' ? 'socks5' : type === 'https' ? 'https' : 'http';
     await ses.setProxy({ proxyRules: `${scheme}://${host}:${port}` });
     configureProxyAuth(ses, partition, username, password);
-    const response = await ses.fetch('https://www.google.com/generate_204', { signal: AbortSignal.timeout(9000) });
-    return response.ok || response.status === 204
-      ? { ok: true, message: 'Proxy connection succeeded.' }
-      : { ok: false, message: `Proxy responded with HTTP ${response.status}.` };
+    // Use a temporary BrowserWindow so the app-level login event can associate
+    // the proxy challenge with the test session; the request itself is bounded.
+    const result = await new Promise<{ ok: boolean; message: string }>((resolve) => {
+      const timer = setTimeout(() => resolve({ ok: false, message: 'Proxy test timed out.' }), 9000);
+      ses.fetch('https://www.google.com/generate_204', { signal: AbortSignal.timeout(8500) })
+        .then((response) => resolve(response.ok || response.status === 204
+          ? { ok: true, message: 'Proxy connection succeeded.' }
+          : { ok: false, message: `Proxy responded with HTTP ${response.status}.` }))
+        .catch((error: unknown) => resolve({ ok: false, message: error instanceof Error ? error.message : 'Proxy connection failed.' }))
+        .finally(() => clearTimeout(timer));
+    });
+    return result;
   } catch (error) {
     return { ok: false, message: error instanceof Error ? error.message : 'Proxy connection failed.' };
   } finally {
+    proxyCredentials.delete(partition);
     await ses.clearStorageData().catch(() => undefined);
     await ses.clearCache().catch(() => undefined);
-    proxyLoginRegistered.delete(partition);
   }
 }
 

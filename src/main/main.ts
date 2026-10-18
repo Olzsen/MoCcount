@@ -10,14 +10,25 @@ let mainWindow: BrowserWindow | undefined;
 
 function redact(profile: BrowserProfile, status: 'stopped' | 'starting' | 'running'): ProfileSummary {
   const { proxy, ...rest } = profile;
-  return { ...rest, proxy: proxy ? { type: proxy.type, host: proxy.host, port: proxy.port, username: proxy.username, hasPassword: Boolean(proxy.password) } : undefined, status };
+  return {
+    ...rest,
+    proxy: proxy ? {
+      type: proxy.type, host: proxy.host, port: proxy.port, username: proxy.username,
+      hasPassword: Boolean(proxy.password),
+    } : undefined,
+    status,
+  };
 }
 
 function validatedDraft(value: unknown): ProfileDraft {
   const parsed = profileDraftSchema.safeParse(value);
   if (!parsed.success) throw new Error(parsed.error.issues[0]?.message ?? 'Invalid profile settings.');
-  if (parsed.data.browser.startUrl.length > 2048) throw new Error('Start URL is too long.');
-  return parsed.data;
+  const url = parsed.data.browser.startUrl.trim();
+  const normalized = /^[a-zA-Z][a-zA-Z\d+.-]*:/.test(url) ? url : `https://${url}`;
+  let parsedUrl: URL;
+  try { parsedUrl = new URL(normalized); } catch { throw new Error('Enter a valid start page URL.'); }
+  if (!['http:', 'https:'].includes(parsedUrl.protocol)) throw new Error('Start page must use HTTP or HTTPS.');
+  return { ...parsed.data, browser: { ...parsed.data.browser, startUrl: parsedUrl.toString() } };
 }
 
 function registerIpc() {

@@ -11,6 +11,7 @@ const api = {
   checkProxy: (draft: ProfileDraft) => ipcRenderer.invoke('proxy:check', draft) as Promise<{ ok: boolean; message: string }>,
   clearSiteData: (id: string) => ipcRenderer.invoke('browser:clear-data', id) as Promise<void>,
   getRunningIds: () => ipcRenderer.invoke('browser:running') as Promise<string[]>,
+  launchProfilesTogether: (ids: string[]) => ipcRenderer.invoke('browser:launch-together', ids) as Promise<void>,
 };
 
 contextBridge.exposeInMainWorld('moccount', api);

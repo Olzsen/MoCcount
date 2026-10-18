@@ -478,35 +478,53 @@ export function relayGroupInteraction(groupId: string, profileId: string, sender
   }
 }
 
-export function navigateGroup(groupId: string, value: string): void {
+export function navigateGroup(groupId: string, profileId: string, value: string): void {
   const group = groups.get(groupId);
   if (!group || group.window.isDestroyed()) throw new Error('Окно группы уже закрыто.');
+  const target = group.views.get(profileId);
+  if (!target) throw new Error('Профиль больше не запущен в этом окне.');
   const url = normalizeAddressOrSearch(value);
+  const targets = group.layoutMode === 'focus' || group.syncInteractions
+    ? [...group.views.values()]
+    : [target];
   group.lastSynchronizedUrl = url;
-  updateGroupAddress(group, url);
-  for (const { view } of group.views.values()) {
-    if (!view.webContents.isDestroyed() && view.webContents.getURL() !== url) void view.webContents.loadURL(url).catch(() => undefined);
+  for (const item of targets) {
+    if (!item.view.webContents.isDestroyed() && item.view.webContents.getURL() !== url) {
+      void item.view.webContents.loadURL(url).catch(() => undefined);
+    }
   }
 }
 
-export function backGroup(groupId: string): void {
+export function backGroup(groupId: string, profileId: string): void {
   const group = groups.get(groupId);
-  if (!group) return;
-  const first = group.views.values().next().value as GroupView | undefined;
-  if (first?.view.webContents.canGoBack()) first.view.webContents.goBack();
+  const target = group?.views.get(profileId);
+  if (!group || !target) return;
+  const items = group.layoutMode === 'focus' || group.syncInteractions ? [...group.views.values()] : [target];
+  for (const item of items) if (!item.view.webContents.isDestroyed() && item.view.webContents.canGoBack()) item.view.webContents.goBack();
 }
 
-export function forwardGroup(groupId: string): void {
+export function forwardGroup(groupId: string, profileId: string): void {
   const group = groups.get(groupId);
-  if (!group) return;
-  const first = group.views.values().next().value as GroupView | undefined;
-  if (first?.view.webContents.canGoForward()) first.view.webContents.goForward();
+  const target = group?.views.get(profileId);
+  if (!group || !target) return;
+  const items = group.layoutMode === 'focus' || group.syncInteractions ? [...group.views.values()] : [target];
+  for (const item of items) if (!item.view.webContents.isDestroyed() && item.view.webContents.canGoForward()) item.view.webContents.goForward();
 }
 
-export function reloadGroup(groupId: string): void {
+export function reloadGroup(groupId: string, profileId: string): void {
   const group = groups.get(groupId);
-  if (!group) return;
-  for (const { view } of group.views.values()) view.webContents.reload();
+  const target = group?.views.get(profileId);
+  if (!group || !target) return;
+  const items = group.layoutMode === 'focus' || group.syncInteractions ? [...group.views.values()] : [target];
+  for (const item of items) if (!item.view.webContents.isDestroyed()) item.view.webContents.reload();
+}
+
+export function toggleGroupAlwaysOnTop(groupId: string): boolean {
+  const group = groups.get(groupId);
+  if (!group || group.window.isDestroyed()) throw new Error('Окно группы уже закрыто.');
+  group.alwaysOnTop = !group.alwaysOnTop;
+  group.window.setAlwaysOnTop(group.alwaysOnTop);
+  return group.alwaysOnTop;
 }
 
 export function getRunningIds(): string[] { return [...running.keys()]; }

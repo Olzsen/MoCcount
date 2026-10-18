@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Activity, ArrowDownUp, Check, ChevronDown, CircleHelp, Clock3, Command, Copy, Ellipsis, FolderOpen, Globe2, LayoutGrid, LockKeyhole, MoreHorizontal, Plus, Search, Settings2, ShieldCheck, Sparkles, Trash2, X } from 'lucide-react';
+import { Activity, ArrowDownUp, Check, ChevronDown, CircleHelp, Clock3, Command, Copy, Ellipsis, FolderOpen, Globe2, LayoutGrid, LockKeyhole, MoreHorizontal, Plus, RefreshCw, Search, Settings2, ShieldCheck, Sparkles, Trash2, X } from 'lucide-react';
 import type { BrowserSettings, ProfileDraft, ProfileSummary, ProxyType } from '../../shared/types';
 
 const colors = ['#7C8DF7', '#55B7A5', '#E5A45A', '#D77CB0', '#7CBE6A', '#A58AF2'];
@@ -25,6 +25,7 @@ export default function App() {
   const [toast, setToast] = useState<{ kind: 'success' | 'error'; text: string } | null>(null);
   const [proxyResult, setProxyResult] = useState<{ ok: boolean; message: string } | null>(null);
   const [loading, setLoading] = useState(true);
+  const [updateBusy, setUpdateBusy] = useState(false);
 
   const refresh = useCallback(async () => {
     const [items, running] = await Promise.all([window.moccount.listProfiles(), window.moccount.getRunningIds()]);
@@ -34,7 +35,11 @@ export default function App() {
   }, []);
 
   useEffect(() => { void refresh().catch((e) => setToast({ kind: 'error', text: e.message })).finally(() => setLoading(false)); }, [refresh]);
-  useEffect(() => { if (!toast) return; const t = window.setTimeout(() => setToast(null), 3800); return () => window.clearTimeout(t); }, [toast]);
+  useEffect(() => { if (!toast) return; const t = window.setTimeout(() => setToast(null), 5200); return () => window.clearTimeout(t); }, [toast]);
+  useEffect(() => window.moccount.onUpdateStatus((message) => {
+    if (message.type !== 'progress' && message.type !== 'checking') setUpdateBusy(false);
+    setToast({ kind: message.type === 'error' ? 'error' : 'success', text: message.message });
+  }), []);
   useEffect(() => { const close = (event: KeyboardEvent) => { if (event.key === 'Escape') { setModal(null); setMenuId(null); } if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') { event.preventDefault(); document.querySelector<HTMLInputElement>('.search-field input')?.focus(); } }; window.addEventListener('keydown', close); return () => window.removeEventListener('keydown', close); }, []);
 
   const filtered = useMemo(() => profiles.filter((p) => p.name.toLowerCase().includes(query.toLowerCase()) && (filter === 'all' || p.status === filter)), [profiles, query, filter]);
@@ -124,6 +129,42 @@ export default function App() {
     }
   }
 
+  async function bulkLaunchTiled() {
+    if (selectedProfiles.length < 2) return;
+    try {
+      if (selectedRunningCount > 0) throw new Error('Перед запуском плитками остановите уже запущенные выбранные профили.');
+      await window.moccount.launchProfilesTiled(selectedProfiles.map((p) => p.id));
+      await refresh();
+      setToast({ kind: 'success', text: `Открыто одно окно с ${selectedProfiles.length} профилями и отдельными панелями навигации.` });
+    } catch (e) {
+      setToast({ kind: 'error', text: e instanceof Error ? e.message : 'Не удалось открыть профили плитками.' });
+      await refresh();
+    }
+  }
+
+  async function createShortcut(profile: ProfileSummary) {
+    setMenuId(null);
+    try {
+      const result = await window.moccount.createDesktopShortcut(profile.id);
+      setToast({ kind: result.ok ? 'success' : 'error', text: result.message });
+    } catch (e) {
+      setToast({ kind: 'error', text: e instanceof Error ? e.message : 'Не удалось создать ярлык.' });
+    }
+  }
+
+  async function updateApplication() {
+    if (updateBusy) return;
+    setUpdateBusy(true);
+    try {
+      const result = await window.moccount.updateApplication();
+      setToast({ kind: result.ok ? 'success' : 'error', text: result.message });
+      if (!result.ok || !result.restartRequired) setUpdateBusy(false);
+    } catch (e) {
+      setUpdateBusy(false);
+      setToast({ kind: 'error', text: e instanceof Error ? e.message : 'Не удалось проверить обновления.' });
+    }
+  }
+
   async function bulkLaunchTogether() {
     if (selectedProfiles.length < 2) return;
     try {
@@ -182,17 +223,17 @@ export default function App() {
     </aside>
 
     <main className="main-content">
-      <header className="topbar"><div className="breadcrumbs"><span>Пространство</span><span className="crumb-slash">/</span><strong>Профили</strong></div><div className="topbar-actions"><div className="connection-status"><span className="pulse-dot" /> Всё работает локально</div><button className="icon-button help-button" title="Об изоляции профилей" onClick={() => setToast({ kind: 'success', text: 'Каждый профиль использует отдельное хранилище Chromium. Полная подмена отпечатка устройства не выполняется.' })}><CircleHelp size={17} /></button><div className="top-avatar">O</div></div></header>
+      <header className="topbar"><div className="breadcrumbs"><span>Пространство</span><span className="crumb-slash">/</span><strong>Профили</strong></div><div className="topbar-actions"><div className="connection-status"><span className="pulse-dot" /> Всё работает локально</div><button className="update-button" disabled={updateBusy} onClick={() => void updateApplication()} title="В dev-режиме обновляет чистую ветку main через Git; в установленной версии проверяет GitHub Releases"><RefreshCw size={14} className={updateBusy ? "update-spin" : ""}/>{updateBusy ? "Проверяем…" : "Обновить"}</button><button className="icon-button help-button" title="Об изоляции профилей" onClick={() => setToast({ kind: 'success', text: 'Каждый профиль использует отдельное хранилище Chromium. Полная подмена отпечатка устройства не выполняется.' })}><CircleHelp size={17} /></button><div className="top-avatar">O</div></div></header>
       <section className="page-content">
         <div className="page-heading"><div><div className="eyebrow">ПРОФИЛИ БРАУЗЕРА</div><h1>Ваши профили<span className="title-period">.</span></h1><p className="page-subtitle">Отдельное пространство для каждого аккаунта, проекта и задачи.</p></div><button className="primary-button" onClick={openCreate}><Plus size={17} strokeWidth={2.2} /> Создать профиль <span className="button-shortcut">⌘ N</span></button></div>
         <div className="stats-row"><div className="stat-item"><div className="stat-icon stat-violet"><LayoutGrid size={17} /></div><div><span>Всего профилей</span><strong>{profiles.length.toString()}</strong></div></div><div className="stat-divider" /><div className="stat-item"><div className="stat-icon stat-green"><Activity size={17} /></div><div><span>Активны сейчас</span><strong>{runningCount.toString()}</strong></div></div><div className="stat-divider" /><div className="stat-item"><div className="stat-icon stat-amber"><LockKeyhole size={17} /></div><div><span>Изолированные сессии</span><strong>{profiles.length.toString()}</strong></div></div><div className="stats-note"><span className="tiny-check"><Check size={12} /></span> Данные остаются на устройстве</div></div>
         <div className="library-toolbar"><div className="section-heading"><h2>Список профилей</h2><span className="result-count">{filtered.length} {filtered.length === 1 ? 'профиль' : 'профилей'}</span></div><div className="toolbar-controls"><div className="search-field"><Search size={15} /><input aria-label="Поиск профилей" placeholder="Поиск профилей..." value={query} onChange={(e) => setQuery(e.target.value)} /><kbd>⌘ K</kbd></div><div className="filter-control"><ArrowDownUp size={14} /><select aria-label="Фильтр профилей" value={filter} onChange={(e) => setFilter(e.target.value as typeof filter)}><option value="all">Все профили</option><option value="running">Запущены</option><option value="stopped">Остановлены</option></select><ChevronDown size={13} /></div></div></div>
                  {!loading && filtered.length > 0 && <div className="bulk-toolbar">
            <label className="bulk-select-label"><input type="checkbox" checked={allFilteredSelected} onChange={toggleFilteredSelection} /><span className="check-visual"><Check size={12} /></span><span>Выбрать все</span></label>
-           {selectedIds.size > 0 && <><span className="selection-count">Выбрано: {selectedIds.size}</span><button className="bulk-button" onClick={() => void bulkLaunchSeparate()}>Запустить отдельно</button><button className="bulk-button bulk-primary" onClick={() => void bulkLaunchTogether()} disabled={selectedProfiles.length < 2 || selectedRunningCount > 0} title={selectedRunningCount ? 'Сначала остановите выбранные профили' : 'Открыть выбранные профили в одном окне'}>Запустить вместе</button><button className="bulk-button" onClick={() => void bulkStop()} disabled={selectedRunningCount === 0}>Остановить</button><button className="bulk-button bulk-danger" onClick={() => void bulkDelete()} disabled={selectedRunningCount > 0} title={selectedRunningCount ? 'Сначала остановите выбранные профили' : 'Удалить выбранные профили'}><Trash2 size={13}/> Удалить</button><button className="clear-selection" onClick={() => setSelectedIds(new Set())} aria-label="Снять выделение">Сбросить</button></>}
+           {selectedIds.size > 0 && <><span className="selection-count">Выбрано: {selectedIds.size}</span><button className="bulk-button" onClick={() => void bulkLaunchSeparate()}>Запустить отдельно</button><button className="bulk-button bulk-primary" onClick={() => void bulkLaunchTogether()} disabled={selectedProfiles.length < 2 || selectedRunningCount > 0} title={selectedRunningCount ? 'Сначала остановите выбранные профили' : 'Одно окно, одна видимая страница, синхронное управление'}>Управлять вместе</button><button className="bulk-button bulk-primary" onClick={() => void bulkLaunchTiled()} disabled={selectedProfiles.length < 2 || selectedRunningCount > 0} title={selectedRunningCount ? 'Сначала остановите выбранные профили' : 'Одно окно, равномерные плитки и собственная адресная строка у каждого профиля'}>Открыть плитками</button><button className="bulk-button" onClick={() => void bulkStop()} disabled={selectedRunningCount === 0}>Остановить</button><button className="bulk-button bulk-danger" onClick={() => void bulkDelete()} disabled={selectedRunningCount > 0} title={selectedRunningCount ? 'Сначала остановите выбранные профили' : 'Удалить выбранные профили'}><Trash2 size={13}/> Удалить</button><button className="clear-selection" onClick={() => setSelectedIds(new Set())} aria-label="Снять выделение">Сбросить</button></>}
          </div>}
          {loading ? <div className="empty-state"><div className="loader-ring" /><h3>Загружаем пространство</h3><p>Читаем список локальных профилей…</p></div> : filtered.length === 0 ? <div className="empty-state"><div className="empty-graphic"><FolderOpen size={25} /></div><h3>{query || filter !== 'all' ? 'Профили не найдены' : 'Начнём с чистого листа.'}</h3><p>{query || filter !== 'all' ? 'Измените запрос или выберите другой фильтр.' : 'Создайте первый профиль, чтобы разделить сессии браузера.'}</p>{!query && filter === 'all' && <button className="primary-button" onClick={openCreate}><Plus size={16} /> Создать первый профиль</button>}</div> : <div className="profile-grid">{filtered.map((profile, index) => <article className={`profile-card ${profile.status === 'running' ? 'is-running' : ''} ${selectedIds.has(profile.id) ? 'is-selected' : ''}`} key={profile.id} style={{ animationDelay: `${index * 45}ms` }}>
-          <div className="card-topline"><label className="profile-select" title={selectedIds.has(profile.id) ? "Снять выделение" : "Выбрать профиль"}><input type="checkbox" checked={selectedIds.has(profile.id)} onChange={() => toggleSelected(profile.id)} aria-label={`Выбрать ${profile.name}`} /><span><Check size={12}/></span></label><div className="profile-avatar" style={{ background: `${profile.color}18`, color: profile.color, borderColor: `${profile.color}3a` }}><span>{profile.avatar || initials(profile.name)}</span><span className="avatar-orbit" /></div><div className={`status-pill ${profile.status}`}><span className="status-dot" />{profile.status === 'running' ? 'Запущен' : 'Не запущен'}</div><div className="more-wrap"><button className="icon-button card-more" aria-label={`Действия для ${profile.name}`} onClick={() => setMenuId(menuId === profile.id ? null : profile.id)}><Ellipsis size={19} /></button>{menuId === profile.id && <div className="dropdown-menu"><button onClick={() => openEdit(profile)}><Settings2 size={14} /> Настроить</button><button onClick={() => void duplicateProfile(profile)}><Copy size={14} /> Дублировать</button><button onClick={() => void clearData(profile)}><Trash2 size={14} /> Очистить данные сайтов</button><div className="menu-divider" /><button className="danger-item" onClick={() => void removeProfile(profile)}><Trash2 size={14} /> Удалить профиль</button></div>}</div></div>
+          <div className="card-topline"><label className="profile-select" title={selectedIds.has(profile.id) ? "Снять выделение" : "Выбрать профиль"}><input type="checkbox" checked={selectedIds.has(profile.id)} onChange={() => toggleSelected(profile.id)} aria-label={`Выбрать ${profile.name}`} /><span><Check size={12}/></span></label><div className="profile-avatar" style={{ background: `${profile.color}18`, color: profile.color, borderColor: `${profile.color}3a` }}><span>{profile.avatar || initials(profile.name)}</span><span className="avatar-orbit" /></div><div className={`status-pill ${profile.status}`}><span className="status-dot" />{profile.status === 'running' ? 'Запущен' : 'Не запущен'}</div><div className="more-wrap"><button className="icon-button card-more" aria-label={`Действия для ${profile.name}`} onClick={() => setMenuId(menuId === profile.id ? null : profile.id)}><Ellipsis size={19} /></button>{menuId === profile.id && <div className="dropdown-menu"><button onClick={() => openEdit(profile)}><Settings2 size={14} /> Настроить</button><button onClick={() => void duplicateProfile(profile)}><Copy size={14} /> Дублировать</button><button onClick={() => void clearData(profile)}><Trash2 size={14} /> Очистить данные сайтов</button><button onClick={() => void createShortcut(profile)}><Command size={14} /> Ярлык на рабочем столе</button><div className="menu-divider" /><button className="danger-item" onClick={() => void removeProfile(profile)}><Trash2 size={14} /> Удалить профиль</button></div>}</div></div>
           <div className="card-title-row"><h3>{profile.name}</h3>{profile.status === 'running' && <span className="running-wave"><i /><i /><i /></span>}</div><div className="profile-description">{profile.status === 'running' ? 'Сессия браузера активна' : 'Готов к запуску'}</div>
           <div className="card-divider" /><div className="card-meta"><span className="meta-label"><Globe2 size={14} /> Подключение</span><span className={`proxy-value ${profile.proxy ? 'proxy-set' : ''}`} title={prettyHost(profile.proxy)}>{prettyHost(profile.proxy)}</span></div><div className="card-meta"><span className="meta-label"><LockKeyhole size={14} /> Данные браузера</span><span className="isolation-value"><span className="mini-shield"><ShieldCheck size={11} /></span> Изолирован</span></div>
           <div className="card-actions"><button className={`launch-button ${profile.status === 'running' ? 'stop-button' : ''}`} disabled={busyId === profile.id} onClick={() => void toggleProfile(profile)}>{busyId === profile.id ? <span className="button-spinner" /> : profile.status === 'running' ? <span className="stop-square" /> : <span className="play-triangle" />}{busyId === profile.id ? 'Подождите…' : profile.status === 'running' ? 'Остановить' : 'Запустить'}</button><button className="configure-button" title="Настроить профиль" onClick={() => openEdit(profile)}><Settings2 size={16} /></button></div>

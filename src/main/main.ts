@@ -3,7 +3,7 @@ import path from 'node:path';
 import { profileDraftSchema } from '../shared/validation';
 import { BrowserProfile, ProfileDraft, ProfileSummary } from '../shared/types';
 import { createProfile, deleteProfile, listProfiles, updateProfile } from './store';
-import { backGroup, checkProxy, clearSiteData, forwardGroup, getRunningIds, installProxyAuthHandler, launchProfile, launchProfilesTogether, navigateGroup, reloadGroup, stopProfile } from './browser-manager';
+import { backGroup, checkProxy, clearSiteData, forwardGroup, getRunningIds, installProxyAuthHandler, launchProfile, launchProfilesTogether, navigateGroup, relayGroupInteraction, reloadGroup, setGroupInteractionSync, stopProfile } from './browser-manager';
 
 const isDev = !app.isPackaged;
 let mainWindow: BrowserWindow | undefined;
@@ -74,6 +74,15 @@ function registerIpc() {
   ipcMain.handle('group:back', (_event, id: unknown) => { if (typeof id === 'string') backGroup(id); });
   ipcMain.handle('group:forward', (_event, id: unknown) => { if (typeof id === 'string') forwardGroup(id); });
   ipcMain.handle('group:reload', (_event, id: unknown) => { if (typeof id === 'string') reloadGroup(id); });
+  ipcMain.handle('group:interaction-sync', (_event, id: unknown, enabled: unknown) => {
+    if (typeof id !== 'string' || typeof enabled !== 'boolean') return false;
+    return setGroupInteractionSync(id, enabled);
+  });
+  ipcMain.on('group:interaction', (event, id: unknown, profileId: unknown, action: unknown) => {
+    if (typeof id !== 'string' || typeof profileId !== 'string') return;
+    relayGroupInteraction(id, profileId, event.sender.id, action);
+  });
+
 
   ipcMain.handle('proxy:check', (_event, draft: unknown) => checkProxy(validatedDraft(draft)));
   ipcMain.handle('browser:clear-data', async (_event, id: string) => {

@@ -12,6 +12,14 @@ declare global {
       checkProxy(draft: ProfileDraft): Promise<{ ok: boolean; message: string }>;
       clearSiteData(id: string): Promise<void>;
       getRunningIds(): Promise<string[]>;
+      launchProfilesTogether(ids: string[]): Promise<void>;
+    };
+    moccountGroup: {
+      navigate(groupId: string, value: string): Promise<void>;
+      back(groupId: string): Promise<void>;
+      forward(groupId: string): Promise<void>;
+      reload(groupId: string): Promise<void>;
+      onUrlChange(callback: (url: string) => void): () => void;
     };
   }
 }

@@ -59,7 +59,11 @@ async function updateFromSource(): Promise<{ ok: boolean; message: string; resta
     const branch = await runGit(['branch', '--show-current']);
     if (branch !== 'main') return { ok: false, message: `Обновление через Git доступно только на ветке main (сейчас: ${branch || 'detached HEAD'}).` };
     const dirty = await runGit(['status', '--porcelain']);
-    if (dirty) return { ok: false, message: 'Есть локальные изменения. Сначала сохрани их или сделай резервную копию — Git-обновление ничего не будет перезаписывать.' };
+    const unsafeChanges = dirty.split('\n').filter(Boolean).filter((line) => {
+      const file = line.slice(3).replace(/\\/g, '/');
+      return !(line.startsWith('?? ') && file === 'package-lock.json');
+    });
+    if (unsafeChanges.length) return { ok: false, message: 'Есть локальные изменения. Сначала сохрани их или сделай резервную копию — Git-обновление ничего не будет перезаписывать.' };
     await runGit(['fetch', 'origin', 'main']);
     const before = await runGit(['rev-parse', 'HEAD']);
     const latest = await runGit(['rev-parse', 'origin/main']);

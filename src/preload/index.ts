@@ -13,7 +13,8 @@ const api = {
   getRunningIds: () => ipcRenderer.invoke('browser:running') as Promise<string[]>,
   launchProfilesTogether: (ids: string[]) => ipcRenderer.invoke('browser:launch-together', ids) as Promise<void>,
   launchProfilesTiled: (ids: string[]) => ipcRenderer.invoke('browser:launch-tiled', ids) as Promise<void>,
-  createDesktopShortcut: (id: string) => ipcRenderer.invoke('profiles:create-shortcut', id) as Promise<{ ok: boolean; message: string }>,
+  createLauncherShortcut: () => ipcRenderer.invoke('app:create-shortcut') as Promise<{ ok: boolean; message: string }>,
+  setProfilePinned: (id: string, pinned: boolean) => ipcRenderer.invoke('profiles:pin', id, pinned) as Promise<ProfileSummary>,
   updateApplication: () => ipcRenderer.invoke('app:update') as Promise<{ ok: boolean; message: string; restartRequired?: boolean; version?: string }>,
   onUpdateStatus: (callback: (message: { type: string; message: string; version?: string; percent?: number }) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, message: { type: string; message: string; version?: string; percent?: number }) => callback(message);

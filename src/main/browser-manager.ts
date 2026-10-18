@@ -22,7 +22,7 @@ const GROUP_CONTROLLER_HTML = `<!doctype html>
 .toolbar{height:64px;display:flex;align-items:center;gap:8px;padding:0 14px;background:#171920;border-bottom:1px solid #2d303b;box-shadow:0 3px 12px #0002}
 .brand{font-weight:750;letter-spacing:-.4px;color:#a99bff;margin-right:5px;white-space:nowrap}.group-label{font-size:10px;color:#8c91a1;border:1px solid #343743;padding:5px 8px;border-radius:6px;white-space:nowrap}
 button{height:34px;min-width:34px;padding:0 10px;border:1px solid #353946;border-radius:8px;background:#22252e;color:#e2e5ef;cursor:pointer;transition:background .16s,border-color .16s,transform .16s}
-button:hover{background:#303441;border-color:#4a4e60}button:active{transform:scale(.97)}button:disabled{opacity:.4;cursor:default}
+button:hover{background:#303441;border-color:#4a4e60}button:active{transform:scale(.97)}button:disabled{opacity:.4;cursor:default}.pane-labels{height:24px;display:grid;background:#101116;border-bottom:1px solid #2d303b;overflow:hidden;pointer-events:none}.pane-label{display:flex;align-items:center;gap:7px;min-width:0;padding:0 10px;border-right:1px solid #2d303b;color:#a5a9b8;font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.pane-dot{width:6px;height:6px;flex:0 0 6px;border-radius:50%}
 .address{height:36px;min-width:70px;flex:1;background:#0e1015;border:1px solid #383c49;border-radius:9px;color:#f0f1f5;padding:0 12px;font:inherit;font-size:12px;outline:none;user-select:text;-webkit-user-select:text;pointer-events:auto}
 .address:focus{border-color:#9486f4;box-shadow:0 0 0 3px #9486f41c}.go{background:#9486f4;color:#171522;border-color:#a89dff;font-weight:700}.go:hover{background:#a99dfc}
 @media(max-width:800px){.group-label{display:none}.brand{display:none}.toolbar{padding:0 7px;gap:5px}button{padding:0 7px}}
@@ -31,7 +31,7 @@ button:hover{background:#303441;border-color:#4a4e60}button:active{transform:sca
 <button id="back" title="Назад" aria-label="Назад">←</button><button id="forward" title="Вперёд" aria-label="Вперёд">→</button><button id="reload" title="Обновить" aria-label="Обновить">↻</button>
 <input id="address" class="address" autocomplete="off" spellcheck="false" placeholder="Введите адрес или поисковый запрос" aria-label="Адрес или поисковый запрос">
 <button id="go" class="go">Перейти</button>
-</div><script>
+</div><div id="pane-labels" class="pane-labels"><!--PANE_LABELS--></div><script>
 const groupId = new URLSearchParams(location.search).get('group') || '';
 const api = window.moccountGroup;
 const address = document.getElementById('address');
@@ -75,11 +75,15 @@ async function configureSession(profile: BrowserProfile, partition: string, ses:
   configureProxyAuth(ses, partition, profile.proxy?.username, profile.proxy?.password);
 }
 
+function escapeHtml(value: string): string {
+  return value.replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[character] ?? character));
+}
+
 function normalizeAddressOrSearch(value: string): string {
   const candidate = value.trim();
   if (!candidate) throw new Error('Введите адрес или поисковый запрос.');
   const looksLikeUrl = /^[a-zA-Z][a-zA-Z\d+.-]*:/.test(candidate) ||
-    /^(localhost|\d{1,3}(\.\d{1,3}){3}|[^\s]+\.[^\s]+)(:\d+)?(\\/.*)?$/i.test(candidate);
+    /^(localhost|\d{1,3}(\.\d{1,3}){3}|[^\s]+\.[^\s]+)(:\d+)?(\/.*)?$/i.test(candidate);
   if (looksLikeUrl) return safeUrl(candidate);
   return `https://www.google.com/search?q=${encodeURIComponent(candidate)}`;
 }
@@ -87,7 +91,7 @@ function normalizeAddressOrSearch(value: string): string {
 function layoutGroup(group: BrowserGroup) {
   if (group.window.isDestroyed()) return;
   const [width, totalHeight] = group.window.getContentSize();
-  const top = 64;
+  const top = 88;
   const contentHeight = Math.max(120, totalHeight - top);
   const items = [...group.views.values()];
   if (!items.length) return;
@@ -191,7 +195,16 @@ async function openBrowserGroup(profiles: BrowserProfile[], isMulti: boolean): P
       view.webContents.on('did-navigate-in-page', (_event, url) => syncGroupNavigation(group, profile.id, url));
     }
 
-    await window.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(GROUP_CONTROLLER_HTML.replace('<title>MoCcount</title>', `<title>MoCcount</title>`).replace('const groupId = new URLSearchParams(location.search).get(\'group\') || \'\';', `const groupId = '${groupId}';`).replace('id="mode">Профиль', `id="mode">${isMulti ? `Мульти · ${profiles.length}` : 'Одиночный профиль'}`))}`);
+    const columns = isMulti ? Math.ceil(Math.sqrt(profiles.length)) : 1;
+    const paneLabels = profiles.map((profile) => {
+      const color = /^#[0-9a-f]{6}$/i.test(profile.color) ? profile.color : '#9486f4';
+      return `<div class="pane-label" title="${escapeHtml(profile.name)}"><span class="pane-dot" style="background:${color}"></span>${escapeHtml(profile.name)}</div>`;
+    }).join('');
+    const controllerHtml = GROUP_CONTROLLER_HTML
+      .replace("const groupId = new URLSearchParams(location.search).get('group') || '';", `const groupId = '${groupId}';`)
+      .replace('id="mode">Профиль', `id="mode">${isMulti ? `Мульти · ${profiles.length}` : 'Одиночный профиль'}`)
+      .replace('id="pane-labels" class="pane-labels"><!--PANE_LABELS-->', `id="pane-labels" class="pane-labels" style="grid-template-columns:repeat(${columns},minmax(0,1fr))">${paneLabels}`);
+    await window.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(controllerHtml)}`);
     layoutGroup(group);
     for (const { view } of group.views.values()) await view.webContents.loadURL(startUrl);
     updateGroupAddress(group, startUrl);
@@ -235,13 +248,15 @@ export function navigateGroup(groupId: string, value: string): void {
 export function backGroup(groupId: string): void {
   const group = groups.get(groupId);
   if (!group) return;
-  for (const { view } of group.views.values()) if (view.webContents.canGoBack()) view.webContents.goBack();
+  const first = group.views.values().next().value as GroupView | undefined;
+  if (first?.view.webContents.canGoBack()) first.view.webContents.goBack();
 }
 
 export function forwardGroup(groupId: string): void {
   const group = groups.get(groupId);
   if (!group) return;
-  for (const { view } of group.views.values()) if (view.webContents.canGoForward()) view.webContents.goForward();
+  const first = group.views.values().next().value as GroupView | undefined;
+  if (first?.view.webContents.canGoForward()) first.view.webContents.goForward();
 }
 
 export function reloadGroup(groupId: string): void {

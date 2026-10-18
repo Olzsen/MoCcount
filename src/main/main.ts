@@ -94,7 +94,6 @@ function createDesktopShortcut(id: string): { ok: boolean; message: string } {
     args,
     description: `Открыть профиль MoCcount: ${profile.name}`,
     icon: process.execPath,
-    workingDirectory: app.getPath('userData'),
   });
   return ok
     ? { ok: true, message: `Ярлык создан на рабочем столе: MoCcount — ${safeName}.` }

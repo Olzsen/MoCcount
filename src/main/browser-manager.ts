@@ -69,7 +69,7 @@ export async function launchProfile(profile: BrowserProfile): Promise<void> {
   const partition = partitionFor(profile.id);
   const ses = session.fromPartition(partition, { cache: true });
   await configureSession(profile, partition, ses);
-  if ((profile.browser.userAgent ?? '').trim()) ses.setUserAgent(profile.browser.userAgent.trim());
+  ses.setUserAgent((profile.browser.userAgent ?? '').trim() || ses.getUserAgent(), profile.browser.locale);
   const win = new BrowserWindow({
     width: profile.browser.width,
     height: profile.browser.height,

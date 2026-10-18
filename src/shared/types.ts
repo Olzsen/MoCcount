@@ -18,6 +18,11 @@ export interface BrowserSettings {
   userAgent: string;
   hardwareConcurrency: number;
   deviceMemory: number;
+  osPlatform: string;
+  screenWidth: number;
+  screenHeight: number;
+  webglVendor: string;
+  webglRenderer: string;
 }
 
 export interface BrowserProfile {

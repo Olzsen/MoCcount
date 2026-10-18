@@ -69,7 +69,16 @@ export function updateProfile(id: string, draft: ProfileDraft): StoredProfile {
   const index = profiles.findIndex((p) => p.id === id);
   if (index < 0) throw new Error('Profile not found.');
   const previous = profiles[index];
-  const profile: StoredProfile = { ...previous, ...draft, id, createdAt: previous.createdAt, userDataPath: previous.userDataPath };
+  const nextProxy = draft.proxy ? { ...draft.proxy } : undefined;
+  if (nextProxy && !nextProxy.password && previous.proxy?.password) nextProxy.password = previous.proxy.password;
+  const profile: StoredProfile = {
+    ...previous,
+    ...draft,
+    proxy: nextProxy,
+    id,
+    createdAt: previous.createdAt,
+    userDataPath: previous.userDataPath,
+  };
   profiles[index] = profile;
   writeProfiles(profiles);
   return profile;

@@ -12,6 +12,7 @@ function initials(name: string) { return name.trim().split(/\s+/).slice(0, 2).ma
 
 export default function App() {
   const [profiles, setProfiles] = useState<ProfileSummary[]>([]);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<'all' | 'running' | 'stopped'>('all');
   const [modal, setModal] = useState<'create' | 'edit' | null>(null);
@@ -29,6 +30,7 @@ export default function App() {
     const [items, running] = await Promise.all([window.moccount.listProfiles(), window.moccount.getRunningIds()]);
     const active = new Set(running);
     setProfiles(items.map((p) => ({ ...p, status: active.has(p.id) ? 'running' : 'stopped' })));
+    setSelectedIds((selected) => new Set([...selected].filter((id) => items.some((item) => item.id === id))));
   }, []);
 
   useEffect(() => { void refresh().catch((e) => setToast({ kind: 'error', text: e.message })).finally(() => setLoading(false)); }, [refresh]);
@@ -37,6 +39,9 @@ export default function App() {
 
   const filtered = useMemo(() => profiles.filter((p) => p.name.toLowerCase().includes(query.toLowerCase()) && (filter === 'all' || p.status === filter)), [profiles, query, filter]);
   const runningCount = profiles.filter((p) => p.status === 'running').length;
+  const selectedProfiles = profiles.filter((p) => selectedIds.has(p.id));
+  const selectedRunningCount = selectedProfiles.filter((p) => p.status === 'running').length;
+  const allFilteredSelected = filtered.length > 0 && filtered.every((p) => selectedIds.has(p.id));
 
   function openCreate() { setEditingId(null); setDraft(blankDraft()); setProxyEnabled(false); setProxyResult(null); setShowBrowser(false); setModal('create'); }
   function openEdit(profile: ProfileSummary) {
@@ -91,9 +96,77 @@ export default function App() {
     catch (e) { setProxyResult({ ok: false, message: e instanceof Error ? e.message : 'Не удалось проверить прокси.' }); }
   }
 
+  function toggleSelected(id: string) {
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleFilteredSelection() {
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (allFilteredSelected) filtered.forEach((p) => next.delete(p.id));
+      else filtered.forEach((p) => next.add(p.id));
+      return next;
+    });
+  }
+
+  async function bulkLaunchSeparate() {
+    try {
+      await Promise.all(selectedProfiles.filter((p) => p.status !== 'running').map((p) => window.moccount.launchProfile(p.id)));
+      await refresh();
+      setToast({ kind: 'success', text: 'Выбранные профили запущены в отдельных окнах.' });
+    } catch (e) {
+      setToast({ kind: 'error', text: e instanceof Error ? e.message : 'Не удалось запустить профили.' });
+      await refresh();
+    }
+  }
+
+  async function bulkLaunchTogether() {
+    if (selectedProfiles.length < 2) return;
+    try {
+      if (selectedRunningCount > 0) throw new Error('Перед запуском мульти-окна остановите уже запущенные выбранные профили.');
+      await window.moccount.launchProfilesTogether(selectedProfiles.map((p) => p.id));
+      await refresh();
+      setToast({ kind: 'success', text: `Мульти-окно запущено: ${selectedProfiles.length} профилей.` });
+    } catch (e) {
+      setToast({ kind: 'error', text: e instanceof Error ? e.message : 'Не удалось запустить мульти-окно.' });
+      await refresh();
+    }
+  }
+
+  async function bulkStop() {
+    const ids = selectedProfiles.filter((p) => p.status === 'running').map((p) => p.id);
+    if (!ids.length) return;
+    try {
+      await Promise.all(ids.map((id) => window.moccount.stopProfile(id)));
+      await new Promise((resolve) => window.setTimeout(resolve, 120));
+      await refresh();
+      setToast({ kind: 'success', text: 'Выбранные запущенные окна остановлены.' });
+    } catch (e) {
+      setToast({ kind: 'error', text: e instanceof Error ? e.message : 'Не удалось остановить профили.' });
+    }
+  }
+
+  async function bulkDelete() {
+    if (!selectedProfiles.length || selectedRunningCount > 0) return;
+    if (!window.confirm(`Удалить выбранные профили (${selectedProfiles.length})? Файлы данных браузера останутся на диске.`)) return;
+    try {
+      await Promise.all(selectedProfiles.map((p) => window.moccount.deleteProfile(p.id)));
+      setSelectedIds(new Set());
+      await refresh();
+      setToast({ kind: 'success', text: 'Выбранные профили удалены из списка.' });
+    } catch (e) {
+      setToast({ kind: 'error', text: e instanceof Error ? e.message : 'Не удалось удалить выбранные профили.' });
+      await refresh();
+    }
+  }
+
   async function clearData(profile: ProfileSummary) {
     setMenuId(null);
-    if (!window.confirm(`Clear cookies, cache and site storage for “${profile.name}”?`)) return;
+    if (!window.confirm(`Очистить cookie, кэш и данные сайтов профиля «${profile.name}»?`)) return;
     try { await window.moccount.clearSiteData(profile.id); setToast({ kind: 'success', text: 'Данные сайтов очищены.' }); }
     catch (e) { setToast({ kind: 'error', text: e instanceof Error ? e.message : 'Не удалось очистить данные сайтов.' }); }
   }
@@ -114,8 +187,12 @@ export default function App() {
         <div className="page-heading"><div><div className="eyebrow">ПРОФИЛИ БРАУЗЕРА</div><h1>Ваши профили<span className="title-period">.</span></h1><p className="page-subtitle">Отдельное пространство для каждого аккаунта, проекта и задачи.</p></div><button className="primary-button" onClick={openCreate}><Plus size={17} strokeWidth={2.2} /> Создать профиль <span className="button-shortcut">⌘ N</span></button></div>
         <div className="stats-row"><div className="stat-item"><div className="stat-icon stat-violet"><LayoutGrid size={17} /></div><div><span>Всего профилей</span><strong>{profiles.length.toString()}</strong></div></div><div className="stat-divider" /><div className="stat-item"><div className="stat-icon stat-green"><Activity size={17} /></div><div><span>Активны сейчас</span><strong>{runningCount.toString()}</strong></div></div><div className="stat-divider" /><div className="stat-item"><div className="stat-icon stat-amber"><LockKeyhole size={17} /></div><div><span>Изолированные сессии</span><strong>{profiles.length.toString()}</strong></div></div><div className="stats-note"><span className="tiny-check"><Check size={12} /></span> Данные остаются на устройстве</div></div>
         <div className="library-toolbar"><div className="section-heading"><h2>Список профилей</h2><span className="result-count">{filtered.length} {filtered.length === 1 ? 'профиль' : 'профилей'}</span></div><div className="toolbar-controls"><div className="search-field"><Search size={15} /><input aria-label="Поиск профилей" placeholder="Поиск профилей..." value={query} onChange={(e) => setQuery(e.target.value)} /><kbd>⌘ K</kbd></div><div className="filter-control"><ArrowDownUp size={14} /><select aria-label="Фильтр профилей" value={filter} onChange={(e) => setFilter(e.target.value as typeof filter)}><option value="all">Все профили</option><option value="running">Запущены</option><option value="stopped">Остановлены</option></select><ChevronDown size={13} /></div></div></div>
-        {loading ? <div className="empty-state"><div className="loader-ring" /><h3>Загружаем пространство</h3><p>Читаем список локальных профилей…</p></div> : filtered.length === 0 ? <div className="empty-state"><div className="empty-graphic"><FolderOpen size={25} /></div><h3>{query || filter !== 'all' ? 'Профили не найдены' : 'Начнём с чистого листа.'}</h3><p>{query || filter !== 'all' ? 'Измените запрос или выберите другой фильтр.' : 'Создайте первый профиль, чтобы разделить сессии браузера.'}</p>{!query && filter === 'all' && <button className="primary-button" onClick={openCreate}><Plus size={16} /> Создать первый профиль</button>}</div> : <div className="profile-grid">{filtered.map((profile, index) => <article className={`profile-card ${profile.status === 'running' ? 'is-running' : ''}`} key={profile.id} style={{ animationDelay: `${index * 45}ms` }}>
-          <div className="card-topline"><div className="profile-avatar" style={{ background: `${profile.color}18`, color: profile.color, borderColor: `${profile.color}3a` }}><span>{profile.avatar || initials(profile.name)}</span><span className="avatar-orbit" /></div><div className={`status-pill ${profile.status}`}><span className="status-dot" />{profile.status === 'running' ? 'Запущен' : 'Не запущен'}</div><div className="more-wrap"><button className="icon-button card-more" aria-label={`Действия для ${profile.name}`} onClick={() => setMenuId(menuId === profile.id ? null : profile.id)}><Ellipsis size={19} /></button>{menuId === profile.id && <div className="dropdown-menu"><button onClick={() => openEdit(profile)}><Settings2 size={14} /> Настроить</button><button onClick={() => void duplicateProfile(profile)}><Copy size={14} /> Дублировать</button><button onClick={() => void clearData(profile)}><Trash2 size={14} /> Очистить данные сайтов</button><div className="menu-divider" /><button className="danger-item" onClick={() => void removeProfile(profile)}><Trash2 size={14} /> Удалить профиль</button></div>}</div></div>
+                 {!loading && filtered.length > 0 && <div className="bulk-toolbar">
+           <label className="bulk-select-label"><input type="checkbox" checked={allFilteredSelected} onChange={toggleFilteredSelection} /><span className="check-visual"><Check size={12} /></span><span>Выбрать все</span></label>
+           {selectedIds.size > 0 && <><span className="selection-count">Выбрано: {selectedIds.size}</span><button className="bulk-button" onClick={() => void bulkLaunchSeparate()}>Запустить отдельно</button><button className="bulk-button bulk-primary" onClick={() => void bulkLaunchTogether()} disabled={selectedProfiles.length < 2 || selectedRunningCount > 0} title={selectedRunningCount ? 'Сначала остановите выбранные профили' : 'Открыть выбранные профили в одном окне'}>Запустить вместе</button><button className="bulk-button" onClick={() => void bulkStop()} disabled={selectedRunningCount === 0}>Остановить</button><button className="bulk-button bulk-danger" onClick={() => void bulkDelete()} disabled={selectedRunningCount > 0} title={selectedRunningCount ? 'Сначала остановите выбранные профили' : 'Удалить выбранные профили'}><Trash2 size={13}/> Удалить</button><button className="clear-selection" onClick={() => setSelectedIds(new Set())} aria-label="Снять выделение">Сбросить</button></>}
+         </div>}
+         {loading ? <div className="empty-state"><div className="loader-ring" /><h3>Загружаем пространство</h3><p>Читаем список локальных профилей…</p></div> : filtered.length === 0 ? <div className="empty-state"><div className="empty-graphic"><FolderOpen size={25} /></div><h3>{query || filter !== 'all' ? 'Профили не найдены' : 'Начнём с чистого листа.'}</h3><p>{query || filter !== 'all' ? 'Измените запрос или выберите другой фильтр.' : 'Создайте первый профиль, чтобы разделить сессии браузера.'}</p>{!query && filter === 'all' && <button className="primary-button" onClick={openCreate}><Plus size={16} /> Создать первый профиль</button>}</div> : <div className="profile-grid">{filtered.map((profile, index) => <article className={`profile-card ${profile.status === 'running' ? 'is-running' : ''}`} key={profile.id} style={{ animationDelay: `${index * 45}ms` }}>
+          <div className="card-topline"><label className="profile-select" title={selectedIds.has(profile.id) ? "Снять выделение" : "Выбрать профиль"}><input type="checkbox" checked={selectedIds.has(profile.id)} onChange={() => toggleSelected(profile.id)} aria-label={`Выбрать ${profile.name}`} /><span><Check size={12}/></span></label><div className="profile-avatar" style={{ background: `${profile.color}18`, color: profile.color, borderColor: `${profile.color}3a` }}><span>{profile.avatar || initials(profile.name)}</span><span className="avatar-orbit" /></div><div className={`status-pill ${profile.status}`}><span className="status-dot" />{profile.status === 'running' ? 'Запущен' : 'Не запущен'}</div><div className="more-wrap"><button className="icon-button card-more" aria-label={`Действия для ${profile.name}`} onClick={() => setMenuId(menuId === profile.id ? null : profile.id)}><Ellipsis size={19} /></button>{menuId === profile.id && <div className="dropdown-menu"><button onClick={() => openEdit(profile)}><Settings2 size={14} /> Настроить</button><button onClick={() => void duplicateProfile(profile)}><Copy size={14} /> Дублировать</button><button onClick={() => void clearData(profile)}><Trash2 size={14} /> Очистить данные сайтов</button><div className="menu-divider" /><button className="danger-item" onClick={() => void removeProfile(profile)}><Trash2 size={14} /> Удалить профиль</button></div>}</div></div>
           <div className="card-title-row"><h3>{profile.name}</h3>{profile.status === 'running' && <span className="running-wave"><i /><i /><i /></span>}</div><div className="profile-description">{profile.status === 'running' ? 'Сессия браузера активна' : 'Готов к запуску'}</div>
           <div className="card-divider" /><div className="card-meta"><span className="meta-label"><Globe2 size={14} /> Подключение</span><span className={`proxy-value ${profile.proxy ? 'proxy-set' : ''}`} title={prettyHost(profile.proxy)}>{prettyHost(profile.proxy)}</span></div><div className="card-meta"><span className="meta-label"><LockKeyhole size={14} /> Данные браузера</span><span className="isolation-value"><span className="mini-shield"><ShieldCheck size={11} /></span> Изолирован</span></div>
           <div className="card-actions"><button className={`launch-button ${profile.status === 'running' ? 'stop-button' : ''}`} disabled={busyId === profile.id} onClick={() => void toggleProfile(profile)}>{busyId === profile.id ? <span className="button-spinner" /> : profile.status === 'running' ? <span className="stop-square" /> : <span className="play-triangle" />}{busyId === profile.id ? 'Подождите…' : profile.status === 'running' ? 'Остановить' : 'Запустить'}</button><button className="configure-button" title="Настроить профиль" onClick={() => openEdit(profile)}><Settings2 size={16} /></button></div>

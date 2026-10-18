@@ -1,13 +1,14 @@
 import { contextBridge, ipcRenderer } from 'electron';
 
 const api = {
-  navigate: (groupId: string, value: string) => ipcRenderer.invoke('group:navigate', groupId, value),
-  back: (groupId: string) => ipcRenderer.invoke('group:back', groupId),
-  forward: (groupId: string) => ipcRenderer.invoke('group:forward', groupId),
-  reload: (groupId: string) => ipcRenderer.invoke('group:reload', groupId),
+  navigate: (groupId: string, profileId: string, value: string) => ipcRenderer.invoke('group:navigate', groupId, profileId, value),
+  back: (groupId: string, profileId: string) => ipcRenderer.invoke('group:back', groupId, profileId),
+  forward: (groupId: string, profileId: string) => ipcRenderer.invoke('group:forward', groupId, profileId),
+  reload: (groupId: string, profileId: string) => ipcRenderer.invoke('group:reload', groupId, profileId),
+  toggleAlwaysOnTop: (groupId: string) => ipcRenderer.invoke('group:toggle-always-on-top', groupId) as Promise<boolean>,
   setInteractionSync: (groupId: string, enabled: boolean) => ipcRenderer.invoke('group:interaction-sync', groupId, enabled) as Promise<boolean>,
-  onUrlChange: (callback: (url: string) => void) => {
-    const listener = (_event: Electron.IpcRendererEvent, url: string) => callback(url);
+  onUrlChange: (callback: (message: { profileId: string; url: string }) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, message: { profileId: string; url: string }) => callback(message);
     ipcRenderer.on('group:url', listener);
     return () => ipcRenderer.removeListener('group:url', listener);
   },

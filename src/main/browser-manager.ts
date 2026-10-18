@@ -114,6 +114,19 @@ function layoutGroup(group: BrowserGroup) {
   });
 }
 
+function updateGroupChrome(group: BrowserGroup) {
+  if (group.window.isDestroyed() || group.window.webContents.isDestroyed()) return;
+  const items = [...group.views.values()];
+  const columns = group.isMulti ? Math.ceil(Math.sqrt(items.length)) : 1;
+  const labels = items.map(({ profile }) => {
+    const color = /^#[0-9a-f]{6}$/i.test(profile.color) ? profile.color : '#9486f4';
+    return `<div class="pane-label" title="${escapeHtml(profile.name)}"><span class="pane-dot" style="background:${color}"></span>${escapeHtml(profile.name)}</div>`;
+  }).join('');
+  const mode = group.isMulti ? `Мульти · ${items.length}` : 'Одиночный профиль';
+  const script = `const labels=document.getElementById('pane-labels'); if(labels){labels.style.gridTemplateColumns=${JSON.stringify(`repeat(${columns},minmax(0,1fr))`)}; labels.innerHTML=${JSON.stringify(labels)};} const mode=document.getElementById('mode'); if(mode) mode.textContent=${JSON.stringify(mode)};`;
+  void group.window.webContents.executeJavaScript(script).catch(() => undefined);
+}
+
 function updateGroupAddress(group: BrowserGroup, url: string) {
   if (!group.window.isDestroyed()) group.window.webContents.send('group:url', url);
 }
@@ -237,10 +250,23 @@ export function stopProfile(id: string): void {
   const entry = running.get(id);
   if (!entry) return;
   const group = groups.get(entry.groupId);
-  if (group && !group.window.isDestroyed() && !group.closing) {
+  if (!group || group.window.isDestroyed() || group.closing) return;
+  const item = group.views.get(id);
+  if (!item) { running.delete(id); return; }
+  group.window.contentView.removeChildView(item.view);
+  group.views.delete(id);
+  running.delete(id);
+  if (!item.view.webContents.isDestroyed()) item.view.webContents.close();
+  if (!group.views.size) {
     group.closing = true;
     group.window.close();
+    return;
   }
+  group.isMulti = group.views.size > 1;
+  const remaining = [...group.views.values()].map((view) => view.profile.name);
+  group.window.setTitle(group.isMulti ? `MoCcount — Мульти-профиль (${group.views.size})` : `MoCcount — ${remaining[0]}`);
+  layoutGroup(group);
+  updateGroupChrome(group);
 }
 
 export function navigateGroup(groupId: string, value: string): void {

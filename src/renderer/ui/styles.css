@@ -46,3 +46,13 @@ input:focus-visible,textarea:focus-visible,select:focus-visible{outline:none}
 .update-spin{animation:update-spin .8s linear infinite}
 @keyframes update-spin{to{transform:rotate(360deg)}}
 @media(prefers-reduced-motion:reduce){.update-spin{animation:none}}
+
+
+/* Profile pinning and launcher shortcut */
+.profile-pin-button{width:28px;height:28px;display:inline-flex;align-items:center;justify-content:center;color:var(--muted,#8d91a2);border:1px solid transparent;background:transparent;flex-shrink:0}
+.profile-pin-button:hover{color:#b8adff;background:#282536;border-color:#46405f}
+.profile-pin-button.is-pinned{color:#b7aaff;background:#29243d;border-color:#514576}
+.pinned-badge{display:inline-flex;align-items:center;justify-content:center;width:21px;height:21px;border-radius:6px;color:#b7aaff;background:#29243d;flex-shrink:0}
+.launcher-shortcut-button{height:30px;display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:0 9px;border:1px solid #373944;border-radius:7px;background:#20212a;color:#bcb4fa;font-size:10px;font-weight:600;white-space:nowrap}
+.launcher-shortcut-button:hover{background:#2b2939;border-color:#62588d}
+@media(max-width:760px){.launcher-shortcut-button{font-size:0;gap:0;width:30px;padding:0}.profile-pin-button{width:25px}}

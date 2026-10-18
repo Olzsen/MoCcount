@@ -86,7 +86,7 @@ export async function launchProfile(profile: BrowserProfile): Promise<void> {
   });
   running.set(profile.id, { window: win, session: ses });
   win.webContents.on('did-finish-load', () => { void win.webContents.executeJavaScript(browserToolbarScript).catch(() => undefined); });
-  win.webContents.on('did-navigate', (_event, url) => { void win.webContents.executeJavaScript(\"const field=document.querySelector('#moccount-toolbar-host')?.shadowRoot?.querySelector('input'); if(field) field.value = \" + JSON.stringify(url) + \";\").catch(() => undefined); });
+  win.webContents.on('did-navigate', (_event, url) => { const script = `const field=document.querySelector('#moccount-toolbar-host')?.shadowRoot?.querySelector('input'); if(field) field.value = ${JSON.stringify(url)};`; void win.webContents.executeJavaScript(script).catch(() => undefined); });
   win.on('closed', () => running.delete(profile.id));
   try {
     await win.loadURL(safeUrl(profile.browser.startUrl));

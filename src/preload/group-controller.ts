@@ -5,6 +5,7 @@ const api = {
   back: (groupId: string) => ipcRenderer.invoke('group:back', groupId),
   forward: (groupId: string) => ipcRenderer.invoke('group:forward', groupId),
   reload: (groupId: string) => ipcRenderer.invoke('group:reload', groupId),
+  setInteractionSync: (groupId: string, enabled: boolean) => ipcRenderer.invoke('group:interaction-sync', groupId, enabled) as Promise<boolean>,
   onUrlChange: (callback: (url: string) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, url: string) => callback(url);
     ipcRenderer.on('group:url', listener);

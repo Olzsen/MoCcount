@@ -20,5 +20,10 @@ export const profileDraftSchema = z.object({
     userAgent: z.string().max(512).default(''),
     hardwareConcurrency: z.number().int().min(1).max(64).default(8),
     deviceMemory: z.number().min(0.25).max(64).default(8),
+    osPlatform: z.enum(['', 'Win32', 'MacIntel', 'Linux x86_64']).default(''),
+    screenWidth: z.number().int().min(0).max(7680).default(0),
+    screenHeight: z.number().int().min(0).max(4320).default(0),
+    webglVendor: z.string().max(128).default(''),
+    webglRenderer: z.string().max(256).default(''),
   }),
 });

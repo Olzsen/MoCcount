@@ -88,3 +88,12 @@ export function deleteProfile(id: string): void {
   const profiles = readProfiles();
   writeProfiles(profiles.filter((p) => p.id !== id));
 }
+
+export function setProfilePinned(id: string, pinned: boolean): StoredProfile {
+  const profiles = readProfiles();
+  const profile = profiles.find((item) => item.id === id);
+  if (!profile) throw new Error('Profile not found.');
+  profile.pinned = pinned;
+  writeProfiles(profiles);
+  return profile;
+}

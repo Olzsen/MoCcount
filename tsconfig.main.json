@@ -12,7 +12,8 @@
       "node"
     ],
     "lib": [
-      "ES2022"
+      "ES2022",
+      "DOM"
     ],
     "resolveJsonModule": true
   },

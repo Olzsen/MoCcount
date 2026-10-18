@@ -17,5 +17,8 @@ export const profileDraftSchema = z.object({
     height: z.number().int().min(600).max(2160),
     locale: z.string().min(2).max(20),
     timezone: z.string().min(1).max(80),
+    userAgent: z.string().max(512).default(''),
+    hardwareConcurrency: z.number().int().min(1).max(64).default(8),
+    deviceMemory: z.number().min(0.25).max(64).default(8),
   }),
 });

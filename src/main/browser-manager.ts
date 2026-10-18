@@ -193,50 +193,71 @@ function layoutGroup(group: BrowserGroup) {
   const items = [...group.views.values()];
   if (!items.length) return;
   const [width, totalHeight] = group.window.getContentSize();
-  const toolbarHeight = 88;
-  const visibleHeight = Math.max(120, totalHeight - toolbarHeight);
-  // Keep one visible controller; follower profiles remain loaded off-screen.
+  const globalToolbarHeight = 48;
+  const paneToolbarHeight = 42;
+  const contentHeight = Math.max(150, totalHeight - globalToolbarHeight);
+
+  if (group.layoutMode === 'focus') {
+    items.forEach(({ view }, index) => {
+      if (index === 0) view.setBounds({ x: 0, y: globalToolbarHeight + paneToolbarHeight, width, height: Math.max(100, totalHeight - globalToolbarHeight - paneToolbarHeight) });
+      else view.setBounds({ x: -10000 - index, y: globalToolbarHeight + paneToolbarHeight, width: 1, height: 1 });
+    });
+    return;
+  }
+
+  const columns = Math.ceil(Math.sqrt(items.length));
+  const rows = Math.ceil(items.length / columns);
+  const cellWidth = Math.floor(width / columns);
+  const cellHeight = Math.floor(contentHeight / rows);
   items.forEach(({ view }, index) => {
-    if (index === 0) {
-      view.setBounds({ x: 0, y: toolbarHeight, width, height: visibleHeight });
-    } else {
-      view.setBounds({ x: -10000 - index, y: toolbarHeight, width: 1, height: 1 });
-    }
+    const column = index % columns;
+    const row = Math.floor(index / columns);
+    const x = column * cellWidth;
+    const y = globalToolbarHeight + row * cellHeight + paneToolbarHeight;
+    const actualWidth = column === columns - 1 ? width - x : cellWidth;
+    const actualHeight = row === rows - 1
+      ? totalHeight - (globalToolbarHeight + row * cellHeight) - paneToolbarHeight
+      : cellHeight - paneToolbarHeight;
+    view.setBounds({ x, y, width: Math.max(120, actualWidth), height: Math.max(100, actualHeight) });
   });
+}
+
+function groupPaneConfig(group: BrowserGroup) {
+  const leaderId = group.views.keys().next().value as string | undefined;
+  return [...group.views.entries()].map(([id, { profile, view }]) => ({
+    id,
+    name: profile.name,
+    color: profile.color,
+    url: view.webContents.isDestroyed() ? profile.browser.startUrl : (view.webContents.getURL() || profile.browser.startUrl),
+    status: view.webContents.isLoading() ? 'Загрузка…' : 'Готов',
+    leader: id === leaderId,
+  }));
 }
 
 function updateGroupChrome(group: BrowserGroup) {
   if (group.window.isDestroyed() || group.window.webContents.isDestroyed()) return;
-  const items = [...group.views.values()];
-  const columns = group.isMulti ? Math.ceil(Math.sqrt(items.length)) : 1;
-  const labels = items.map(({ profile }) => {
-    const color = /^#[0-9a-f]{6}$/i.test(profile.color) ? profile.color : '#9486f4';
-    return `<div class="pane-label" title="${escapeHtml(profile.name)}"><span class="pane-dot" style="background:${color}"></span>${escapeHtml(profile.name)}${profile.id === items[0]?.profile.id ? ' · управляющий' : ' · фон'}</div>`;
-  }).join('');
-  const mode = group.isMulti ? `Управление · ${items.length}` : 'Одиночный профиль';
-  const script = `const labels=document.getElementById('pane-labels'); if(labels){labels.style.gridTemplateColumns=${JSON.stringify(`repeat(${columns},minmax(0,1fr))`)}; labels.innerHTML=${JSON.stringify(labels)};} const mode=document.getElementById('mode'); if(mode) mode.textContent=${JSON.stringify(mode)}; const sync=document.getElementById('sync-actions'); if(sync){sync.style.display=${JSON.stringify(group.isMulti ? 'inline-flex' : 'none')}; sync.dataset.enabled=${JSON.stringify(String(group.syncInteractions))}; sync.textContent=${JSON.stringify(group.syncInteractions ? 'Действия вкл.' : 'Действия выкл.')};}`;
+  const config = JSON.stringify(groupPaneConfig(group)).replace(/</g, '\\u003c');
+  const script = `window.renderProfiles(${config}, ${JSON.stringify(group.layoutMode)}, ${JSON.stringify(group.alwaysOnTop)}, ${JSON.stringify(group.syncInteractions)});`;
   void group.window.webContents.executeJavaScript(script).catch(() => undefined);
 }
 
-function updateGroupAddress(group: BrowserGroup, url: string) {
-  if (!group.window.isDestroyed()) group.window.webContents.send('group:url', url);
+function updateGroupAddress(group: BrowserGroup, profileId: string, url: string) {
+  if (!group.window.isDestroyed() && !group.window.webContents.isDestroyed()) {
+    group.window.webContents.send('group:url', { profileId, url });
+  }
 }
 
 function syncGroupNavigation(group: BrowserGroup, sourceId: string, url: string) {
-  // During initial loading, each profile is allowed to follow its own redirects.
-  // After startup, only the visible leader drives group navigation, preventing redirect loops.
-  if (group.initializing) return;
-  const leaderId = group.views.keys().next().value as string | undefined;
-  if (!leaderId || sourceId !== leaderId) return;
+  if (group.initializing || group.closing) return;
   let parsed: URL;
   try { parsed = new URL(url); } catch { return; }
   if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return;
-  if (url === group.lastSynchronizedUrl) {
-    updateGroupAddress(group, url);
-    return;
-  }
+  updateGroupAddress(group, sourceId, url);
+
+  const shouldSyncNavigation = group.layoutMode === 'focus' || group.syncInteractions;
+  if (!shouldSyncNavigation) return;
+  if (url === group.lastSynchronizedUrl && [...group.views.values()].every((item) => item.view.webContents.getURL() === url)) return;
   group.lastSynchronizedUrl = url;
-  updateGroupAddress(group, url);
   for (const [id, item] of group.views) {
     if (id === sourceId || item.view.webContents.isDestroyed()) continue;
     if (item.view.webContents.getURL() === url) continue;

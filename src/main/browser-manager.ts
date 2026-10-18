@@ -23,7 +23,7 @@ const GROUP_CONTROLLER_HTML = `<!doctype html>
 .brand{font-weight:750;letter-spacing:-.4px;color:#a99bff;margin-right:5px;white-space:nowrap}.group-label{font-size:10px;color:#8c91a1;border:1px solid #343743;padding:5px 8px;border-radius:6px;white-space:nowrap}
 button{height:34px;min-width:34px;padding:0 10px;border:1px solid #353946;border-radius:8px;background:#22252e;color:#e2e5ef;cursor:pointer;transition:background .16s,border-color .16s,transform .16s}
 button:hover{background:#303441;border-color:#4a4e60}button:active{transform:scale(.97)}button:disabled{opacity:.4;cursor:default}
-.address{height:36px;min-width:70px;flex:1;background:#0e1015;border:1px solid #383c49;border-radius:9px;color:#f0f1f5;padding:0 12px;font:12px inherit;outline:none;user-select:text;-webkit-user-select:text;pointer-events:auto}
+.address{height:36px;min-width:70px;flex:1;background:#0e1015;border:1px solid #383c49;border-radius:9px;color:#f0f1f5;padding:0 12px;font:inherit;font-size:12px;outline:none;user-select:text;-webkit-user-select:text;pointer-events:auto}
 .address:focus{border-color:#9486f4;box-shadow:0 0 0 3px #9486f41c}.go{background:#9486f4;color:#171522;border-color:#a89dff;font-weight:700}.go:hover{background:#a99dfc}
 @media(max-width:800px){.group-label{display:none}.brand{display:none}.toolbar{padding:0 7px;gap:5px}button{padding:0 7px}}
 </style></head><body><div class="toolbar">
@@ -78,8 +78,8 @@ async function configureSession(profile: BrowserProfile, partition: string, ses:
 function normalizeAddressOrSearch(value: string): string {
   const candidate = value.trim();
   if (!candidate) throw new Error('Введите адрес или поисковый запрос.');
-  const looksLikeUrl = /^[a-zA-Z][a-zA-Z\\d+.-]*:/.test(candidate) ||
-    /^(localhost|\\d{1,3}(\\.\\d{1,3}){3}|[^\\s]+\\.[^\\s]+)(:\\d+)?(\\/.*)?$/i.test(candidate);
+  const looksLikeUrl = /^[a-zA-Z][a-zA-Z\d+.-]*:/.test(candidate) ||
+    /^(localhost|\d{1,3}(\.\d{1,3}){3}|[^\s]+\.[^\s]+)(:\d+)?(\\/.*)?$/i.test(candidate);
   if (looksLikeUrl) return safeUrl(candidate);
   return `https://www.google.com/search?q=${encodeURIComponent(candidate)}`;
 }

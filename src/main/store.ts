@@ -59,7 +59,7 @@ export function createProfile(draft: ProfileDraft): StoredProfile {
     createdAt: new Date().toISOString(),
     userDataPath: path.join(app.getPath('userData'), 'profiles', id),
   };
-  profiles.unshift(profile);
+  profiles.push(profile);
   writeProfiles(profiles);
   return profile;
 }

@@ -11,6 +11,7 @@ interface BrowserGroup {
   lastSynchronizedUrl: string;
   isMulti: boolean;
   syncInteractions: boolean;
+  initializing: boolean;
   closing: boolean;
 }
 const running = new Map<string, RunningProfile>();
@@ -137,6 +138,11 @@ function updateGroupAddress(group: BrowserGroup, url: string) {
 }
 
 function syncGroupNavigation(group: BrowserGroup, sourceId: string, url: string) {
+  // During initial loading, each profile is allowed to follow its own redirects.
+  // After startup, only the visible leader drives group navigation, preventing redirect loops.
+  if (group.initializing) return;
+  const leaderId = group.views.keys().next().value as string | undefined;
+  if (!leaderId || sourceId !== leaderId) return;
   let parsed: URL;
   try { parsed = new URL(url); } catch { return; }
   if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return;
@@ -177,7 +183,7 @@ async function openBrowserGroup(profiles: BrowserProfile[], isMulti: boolean): P
       sandbox: true,
     },
   });
-  const group: BrowserGroup = { id: groupId, window, views: new Map(), lastSynchronizedUrl: startUrl, isMulti, syncInteractions: false, closing: false };
+  const group: BrowserGroup = { id: groupId, window, views: new Map(), lastSynchronizedUrl: startUrl, isMulti, syncInteractions: false, initializing: true, closing: false };
   groups.set(groupId, group);
   window.on('resize', () => layoutGroup(group));
   window.on('closed', () => {
@@ -231,8 +237,27 @@ async function openBrowserGroup(profiles: BrowserProfile[], isMulti: boolean): P
       .replace('id="pane-labels" class="pane-labels"><!--PANE_LABELS-->', `id="pane-labels" class="pane-labels" style="grid-template-columns:repeat(${columns},minmax(0,1fr))">${paneLabels}`);
     await window.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(controllerHtml)}`);
     layoutGroup(group);
-    for (const { view } of group.views.values()) await view.webContents.loadURL(startUrl);
-    updateGroupAddress(group, startUrl);
+    // Load each isolated session independently. ERR_ABORTED is common when a
+    // navigation is superseded/redirected; it must not tear down the whole group.
+    const results = await Promise.all([...group.views.values()].map(async ({ view }) => {
+      try {
+        await view.webContents.loadURL(startUrl);
+        return null;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (message.includes('ERR_ABORTED') || view.webContents.isDestroyed()) return null;
+        return message;
+      }
+    }));
+    const failures = results.filter((message): message is string => Boolean(message));
+    if (failures.length === group.views.size) {
+      throw new Error(`Не удалось загрузить страницу ни в одном профиле: ${failures[0]}`);
+    }
+    group.initializing = false;
+    const leader = group.views.values().next().value as GroupView | undefined;
+    const actualUrl = leader?.view.webContents.getURL() || startUrl;
+    group.lastSynchronizedUrl = actualUrl;
+    updateGroupAddress(group, actualUrl);
   } catch (error) {
     if (!window.isDestroyed()) window.destroy();
     groups.delete(groupId);

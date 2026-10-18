@@ -3,7 +3,7 @@ import path from 'node:path';
 import { profileDraftSchema } from '../shared/validation';
 import { BrowserProfile, ProfileDraft, ProfileSummary } from '../shared/types';
 import { createProfile, deleteProfile, listProfiles, updateProfile } from './store';
-import { checkProxy, clearSiteData, getRunningIds, launchProfile, stopProfile } from './browser-manager';
+import { checkProxy, clearSiteData, getRunningIds, installProxyAuthHandler, launchProfile, stopProfile } from './browser-manager';
 
 const isDev = !app.isPackaged;
 let mainWindow: BrowserWindow | undefined;
@@ -81,6 +81,7 @@ function createMainWindow() {
 }
 
 app.whenReady().then(() => {
+  installProxyAuthHandler();
   registerIpc();
   createMainWindow();
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createMainWindow(); });

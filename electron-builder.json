@@ -1,0 +1,27 @@
+{
+  "appId": "com.olzsen.moccount",
+  "productName": "MoCcount",
+  "directories": {
+    "output": "release"
+  },
+  "files": [
+    "dist/**/*",
+    "package.json"
+  ],
+  "mac": {
+    "target": [
+      "dmg",
+      "zip"
+    ]
+  },
+  "win": {
+    "target": [
+      "nsis"
+    ]
+  },
+  "linux": {
+    "target": [
+      "AppImage"
+    ]
+  }
+}

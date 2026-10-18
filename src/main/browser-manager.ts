@@ -162,7 +162,10 @@ async function openBrowserGroup(profiles: BrowserProfile[], isMulti: boolean): P
   groups.set(groupId, group);
   window.on('resize', () => layoutGroup(group));
   window.on('closed', () => {
-    for (const id of group.views.keys()) running.delete(id);
+    for (const [id, item] of group.views) {
+      running.delete(id);
+      if (!item.view.webContents.isDestroyed()) item.view.webContents.close();
+    }
     groups.delete(groupId);
   });
 

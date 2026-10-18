@@ -274,10 +274,19 @@ async function openBrowserGroup(profiles: BrowserProfile[], isMulti: boolean): P
       throw new Error(`Не удалось загрузить страницу ни в одном профиле: ${failures[0]}`);
     }
     group.initializing = false;
+    const leaderId = group.views.keys().next().value as string | undefined;
     const leader = group.views.values().next().value as GroupView | undefined;
     const actualUrl = leader?.view.webContents.getURL() || startUrl;
     group.lastSynchronizedUrl = actualUrl;
     updateGroupAddress(group, actualUrl);
+    // Reconcile profiles that were redirected or cancelled while the group
+    // was initializing, but do not let startup navigation errors close the window.
+    for (const [id, item] of group.views) {
+      if (id === leaderId || item.view.webContents.isDestroyed()) continue;
+      if (item.view.webContents.getURL() !== actualUrl) {
+        void item.view.webContents.loadURL(actualUrl).catch(() => undefined);
+      }
+    }
   } catch (error) {
     if (!window.isDestroyed()) window.destroy();
     groups.delete(groupId);

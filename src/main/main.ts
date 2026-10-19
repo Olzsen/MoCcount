@@ -86,21 +86,57 @@ function startupProfileId(): string | undefined {
   return index >= 0 ? process.argv[index + 1] : undefined;
 }
 
-function createLauncherDesktopShortcut(): { ok: boolean; message: string } {
-  if (process.platform !== 'win32') return { ok: false, message: 'Создание ярлыка лаунчера сейчас поддерживается в Windows.' };
+async function createLauncherDesktopShortcut(): Promise<{ ok: boolean; message: string }> {
+  if (process.platform !== 'win32') {
+    return { ok: false, message: 'Создание ярлыка лаунчера сейчас поддерживается в Windows.' };
+  }
+
   const shortcutPath = path.join(app.getPath('desktop'), 'MoCcount.lnk');
-  const args = app.isPackaged
-    ? ''
-    : `"${app.getAppPath().replace(/"/g, '\\\"')}"`;
-  const ok = shell.writeShortcutLink(shortcutPath, 'create', {
+  const appPath = app.getAppPath();
+  const args = app.isPackaged ? '' : `"${appPath}"`;
+  const cwd = app.isPackaged ? path.dirname(process.execPath) : appPath;
+  const shortcut = {
     target: process.execPath,
     args,
+    cwd,
     description: 'Запустить лаунчер MoCcount',
     icon: process.execPath,
-  });
-  return ok
-    ? { ok: true, message: 'Ярлык лаунчера MoCcount создан на рабочем столе.' }
-    : { ok: false, message: 'Windows не смогла создать ярлык лаунчера.' };
+    iconIndex: 0,
+  };
+
+  try {
+    let created = shell.writeShortcutLink(shortcutPath, 'create', shortcut);
+    if (!created) {
+      // Fallback to Windows Script Host if Electron cannot write the link.
+      const quotePs = (value: string) => `'${value.replace(/'/g, "''")}'`;
+      const script = [
+        '$shell = New-Object -ComObject WScript.Shell',
+        `$link = $shell.CreateShortcut(${quotePs(shortcutPath)})`,
+        `$link.TargetPath = ${quotePs(process.execPath)}`,
+        `$link.Arguments = ${quotePs(args)}`,
+        `$link.WorkingDirectory = ${quotePs(cwd)}`,
+        `$link.Description = ${quotePs('Запустить лаунчер MoCcount')}`,
+        `$link.IconLocation = ${quotePs(process.execPath + ',0')}`,
+        '$link.Save()',
+      ].join('\n');
+      const encoded = Buffer.from(script, 'utf16le').toString('base64');
+      await execFileAsync('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', encoded], {
+        timeout: 15000,
+        windowsHide: true,
+      });
+      created = true;
+    }
+
+    if (!created) return { ok: false, message: 'Windows не смогла создать ярлык лаунчера.' };
+    const details = shell.readShortcutLink(shortcutPath);
+    if (path.resolve(details.target) !== path.resolve(process.execPath)) {
+      return { ok: false, message: 'Ярлык создан, но Windows сохранила неверный путь запуска. Попробуй создать его ещё раз.' };
+    }
+    return { ok: true, message: 'Ярлык лаунчера MoCcount создан на рабочем столе.' };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return { ok: false, message: `Не удалось создать ярлык MoCcount: ${message}` };
+  }
 }
 
 function redact(profile: BrowserProfile, status: 'stopped' | 'starting' | 'running'): ProfileSummary {

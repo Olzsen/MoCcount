@@ -675,7 +675,10 @@ export function stopProfile(id: string): void {
     return;
   }
   group.isMulti = group.views.size > 1;
-  if (!group.isMulti) group.syncInteractions = false;
+  if (!group.isMulti) {
+    group.syncInteractions = false;
+    group.layoutMode = 'focus';
+  }
   const remaining = [...group.views.values()].map((view) => view.profile.name);
   group.window.setTitle(group.isMulti ? `MoCcount — Управление (${group.views.size})` : `MoCcount — ${remaining[0]}`);
   layoutGroup(group);

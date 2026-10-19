@@ -596,7 +596,6 @@ export async function openGroupTab(groupId: string): Promise<boolean> {
   layoutGroup(group);
   updateGroupChrome(group);
   focusGroupAddress(group);
-  void tab.view.webContents.loadURL('about:blank').catch(() => undefined);
   group.window.setTitle('MoCcount — Новая вкладка');
   return true;
 }

@@ -34,7 +34,7 @@ button:hover{background:#303441;border-color:#4a4e60}button:active{transform:sca
 .global-action{height:29px;font-size:10px;white-space:nowrap}.global-action.active{color:#9be0bd;border-color:#3a6b54;background:#1b3028}
 .profile-tabs{height:38px;display:none;align-items:center;gap:5px;padding:0 8px;background:#111319;border-bottom:1px solid #2d303b;overflow:hidden;-webkit-app-region:drag;app-region:drag}
 body.with-tabs .profile-tabs{display:flex}
-.profile-tab{height:28px;min-width:48px;max-width:240px;display:flex;align-items:center;gap:7px;padding:0 7px;background:#1c1f27;border:1px solid #303440;border-bottom-color:#3a3d4a;border-radius:7px 7px 0 0;font-size:11px;flex:0 1 190px;overflow:hidden}
+.profile-tab{height:28px;min-width:48px;max-width:240px;display:flex;align-items:center;gap:7px;padding:0 7px;background:#1c1f27;border:1px solid #303440;border-bottom-color:#3a3d4a;border-radius:7px 7px 0 0;font-size:11px;flex:0 1 190px;overflow:hidden;cursor:pointer;-webkit-app-region:no-drag;app-region:no-drag}
 .profile-tab.active{background:#252331;border-color:#62578a;color:#eeeaff}
 .profile-tab-label{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;text-align:left}
 .profile-tab-close{min-width:20px;width:20px;height:20px;padding:0;border-color:transparent;background:transparent;color:#8e93a4;line-height:1;flex-shrink:0}
@@ -69,11 +69,13 @@ window.renderProfiles = (profiles, layoutMode, alwaysOnTop, syncEnabled, tabs) =
   tabStrip.innerHTML = '';
   if (showTabs && profiles[0]) {
     tabs.forEach((tab) => {
-      const button = document.createElement('button');
+      const button = document.createElement('div');
       button.className = 'profile-tab' + (tab.active ? ' active' : '');
       button.dataset.tabAction = 'select';
       button.dataset.tabId = tab.id;
       button.title = tab.url || tab.title;
+      button.setAttribute('role', 'tab');
+      button.tabIndex = 0;
       button.setAttribute('aria-label', tab.title || 'Вкладка');
       const label = document.createElement('span');
       label.className = 'profile-tab-label';
@@ -183,11 +185,11 @@ syncButton.addEventListener('click', async () => {
   } catch { window.alert('Не удалось изменить синхронизацию действий.'); }
 });
 tabStrip.addEventListener('click', (event) => {
-  const button = event.target.closest('button[data-tab-action]');
+  const button = event.target.closest('[data-tab-action]');
   if (!button) return;
   const action = button.dataset.tabAction;
   const tabId = button.dataset.tabId;
-  if (action === 'new') void api.openTab(groupId);
+  if (action === 'new') void api.openTab(groupId).catch((error) => window.alert(error instanceof Error ? error.message : 'Не удалось открыть вкладку.'));
   else if (action === 'select' && tabId) void api.selectTab(groupId, tabId);
   else if (action === 'close' && tabId) void api.closeTab(groupId, tabId);
 });
@@ -401,6 +403,25 @@ function attachTabEvents(group: BrowserGroup, profileId: string, tab: BrowserTab
   };
   tab.view.webContents.on('did-navigate', (_event, url) => refreshTab(url));
   tab.view.webContents.on('did-navigate-in-page', (_event, url) => refreshTab(url));
+  tab.view.webContents.on('before-input-event', (event, input) => {
+    if (input.type !== 'keyDown' || !(input.control || input.meta)) return;
+    const key = input.key.toLowerCase();
+    const item = group.views.get(profileId);
+    if (!item || item.activeTabId !== tab.id) return;
+    if (key === 't') {
+      event.preventDefault();
+      void openGroupTab(group.id).catch(() => undefined);
+    } else if (key === 'w') {
+      event.preventDefault();
+      closeGroupTab(group.id, tab.id);
+    } else if (key === 'tab') {
+      event.preventDefault();
+      const current = item.tabs.findIndex((candidate) => candidate.id === tab.id);
+      const step = input.shift ? -1 : 1;
+      const next = item.tabs[(current + step + item.tabs.length) % item.tabs.length];
+      if (next) selectGroupTab(group.id, next.id);
+    }
+  });
   tab.view.webContents.on('did-start-loading', () => { tab.loading = true; updateGroupChrome(group); });
   tab.view.webContents.on('did-stop-loading', () => refreshTab());
   tab.view.webContents.on('page-title-updated', (_event, title) => {

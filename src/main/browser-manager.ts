@@ -330,6 +330,12 @@ function updateGroupAddress(group: BrowserGroup, profileId: string, url: string)
   }
 }
 
+function focusGroupAddress(group: BrowserGroup): void {
+  if (group.window.isDestroyed() || group.window.webContents.isDestroyed()) return;
+  void group.window.webContents.executeJavaScript("(() => { const input = document.querySelector('input[data-address]'); if (input) { input.focus(); input.select(); } })()")
+    .catch(() => undefined);
+}
+
 function syncGroupNavigation(group: BrowserGroup, sourceId: string, url: string) {
   if (group.initializing || group.closing) return;
   let parsed: URL;
@@ -420,6 +426,9 @@ function attachTabEvents(group: BrowserGroup, profileId: string, tab: BrowserTab
       const step = input.shift ? -1 : 1;
       const next = item.tabs[(current + step + item.tabs.length) % item.tabs.length];
       if (next) selectGroupTab(group.id, next.id);
+    } else if (key === 'l') {
+      event.preventDefault();
+      focusGroupAddress(group);
     }
   });
   tab.view.webContents.on('did-start-loading', () => { tab.loading = true; updateGroupChrome(group); });
@@ -586,6 +595,7 @@ export async function openGroupTab(groupId: string): Promise<boolean> {
   attachTabEvents(group, item.profile.id, tab);
   layoutGroup(group);
   updateGroupChrome(group);
+  focusGroupAddress(group);
   void tab.view.webContents.loadURL('about:blank').catch(() => undefined);
   group.window.setTitle('MoCcount — Новая вкладка');
   return true;
@@ -605,6 +615,7 @@ export function selectGroupTab(groupId: string, tabId: string): boolean {
   updateGroupChrome(group);
   updateGroupAddress(group, item.profile.id, tab.view.webContents.getURL() || tab.url);
   group.window.setTitle(`MoCcount — ${tab.title || item.profile.name}`);
+  tab.view.webContents.focus();
   return true;
 }
 
@@ -630,6 +641,7 @@ export function closeGroupTab(groupId: string, tabId: string): boolean {
   updateGroupAddress(group, item.profile.id, item.view.webContents.getURL() || 'about:blank');
   const active = item.tabs.find((candidate) => candidate.id === item.activeTabId);
   group.window.setTitle(`MoCcount — ${active?.title || item.profile.name}`);
+  item.view.webContents.focus();
   return true;
 }
 

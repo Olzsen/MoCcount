@@ -24,6 +24,9 @@ declare global {
       back(groupId: string, profileId: string): Promise<void>;
       forward(groupId: string, profileId: string): Promise<void>;
       reload(groupId: string, profileId: string): Promise<void>;
+      openTab(groupId: string): Promise<boolean>;
+      selectTab(groupId: string, tabId: string): Promise<boolean>;
+      closeTab(groupId: string, tabId: string): Promise<boolean>;
       toggleAlwaysOnTop(groupId: string): Promise<boolean>;
       setInteractionSync(groupId: string, enabled: boolean): Promise<boolean>;
       onUrlChange(callback: (message: { profileId: string; url: string }) => void): () => void;

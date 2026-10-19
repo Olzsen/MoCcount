@@ -3,7 +3,8 @@ import path from 'node:path';
 import { BrowserProfile, ProfileDraft } from '../shared/types';
 
 interface RunningProfile { window: BrowserWindow; session: Session; view: WebContentsView; groupId: string }
-interface GroupView { profile: BrowserProfile; session: Session; view: WebContentsView }
+interface BrowserTab { id: string; view: WebContentsView; url: string; title: string; loading: boolean }
+interface GroupView { profile: BrowserProfile; session: Session; view: WebContentsView; tabs: BrowserTab[]; activeTabId: string; fingerprint: string }
 interface BrowserGroup {
   id: string;
   window: BrowserWindow;
@@ -31,6 +32,15 @@ const GROUP_CONTROLLER_HTML = `<!doctype html>
 button{height:30px;min-width:29px;padding:0 8px;border:1px solid #353946;border-radius:7px;background:#22252e;color:#e2e5ef;cursor:pointer;transition:background .16s,border-color .16s,transform .16s;flex-shrink:0;-webkit-app-region:no-drag;app-region:no-drag}
 button:hover{background:#303441;border-color:#4a4e60}button:active{transform:scale(.97)}button:disabled{opacity:.4;cursor:default}
 .global-action{height:29px;font-size:10px;white-space:nowrap}.global-action.active{color:#9be0bd;border-color:#3a6b54;background:#1b3028}
+.profile-tabs{height:38px;display:none;align-items:center;gap:5px;padding:0 8px;background:#111319;border-bottom:1px solid #2d303b;overflow:hidden;-webkit-app-region:drag;app-region:drag}
+body.with-tabs .profile-tabs{display:flex}
+.profile-tab{height:28px;min-width:48px;max-width:240px;display:flex;align-items:center;gap:7px;padding:0 7px;background:#1c1f27;border:1px solid #303440;border-bottom-color:#3a3d4a;border-radius:7px 7px 0 0;font-size:11px;flex:0 1 190px;overflow:hidden}
+.profile-tab.active{background:#252331;border-color:#62578a;color:#eeeaff}
+.profile-tab-label{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;text-align:left}
+.profile-tab-close{min-width:20px;width:20px;height:20px;padding:0;border-color:transparent;background:transparent;color:#8e93a4;line-height:1;flex-shrink:0}
+.profile-tab-close:hover{color:#fff;background:#4a3036;border-color:#68434a}
+.profile-tab-add{height:26px;min-width:27px;padding:0 7px;border-radius:6px;color:#bcb4fa;font-size:17px;line-height:1}
+body.with-tabs .profile-tiles{height:calc(100vh - 86px)}
 .profile-tiles{height:calc(100vh - 48px);display:grid;overflow:hidden;background:#0d0f14}
 .profile-pane{min-width:0;min-height:0;display:flex;flex-direction:column;overflow:hidden;border-right:1px solid #2c2f39;border-bottom:1px solid #2c2f39}
 .pane-toolbar{height:42px;min-height:42px;display:flex;align-items:center;gap:5px;padding:0 7px;background:#171920;border-bottom:1px solid #343744}
@@ -40,19 +50,56 @@ button:hover{background:#303441;border-color:#4a4e60}button:active{transform:sca
 .address:focus{border-color:#9486f4;box-shadow:0 0 0 2px #9486f41c}
 .go{background:#9486f4;color:#171522;border-color:#a89dff;font-weight:700;font-size:10px}.go:hover{background:#a99dfc}
 .tiles-status{height:19px;padding:3px 7px;color:#747988;background:#121319;font-size:9px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-@media(max-width:860px){.pane-title{display:none}.global-bar{gap:5px;padding:0 148px 0 6px}.brand{display:none}.pane-toolbar{gap:3px;padding:0 3px}button{min-width:25px;padding:0 5px}.global-action{font-size:9px}}
+@media(max-width:860px){.pane-title{display:none}.global-bar{gap:5px;padding:0 148px 0 6px}.brand{display:none}.profile-tabs{gap:3px;padding:0 4px}.profile-tab{flex-basis:130px;max-width:180px}.pane-toolbar{gap:3px;padding:0 3px}button{min-width:25px;padding:0 5px}.global-action{font-size:9px}}
 </style></head><body>
 <div class="global-bar"><span class="brand">MoCcount</span><span class="group-label" id="mode">Мульти-запуск</span><button class="global-action" id="pin-window" title="Закрепить окно поверх остальных">Закрепить</button><button class="global-action" id="sync-actions" data-enabled="false" title="Повторять действия во всех профилях">Действия выкл.</button></div>
-<div id="profile-tiles" class="profile-tiles"></div>
+<div id="profile-tabs" class="profile-tabs" aria-label="Вкладки браузера"></div><div id="profile-tiles" class="profile-tiles"></div>
 <script>
 const groupId = new URLSearchParams(location.search).get('group') || '';
 const api = window.moccountGroup;
 const tiles = document.getElementById('profile-tiles');
+const tabStrip = document.getElementById('profile-tabs');
 const modeLabel = document.getElementById('mode');
 const syncButton = document.getElementById('sync-actions');
 const pinButton = document.getElementById('pin-window');
 
-window.renderProfiles = (profiles, layoutMode, alwaysOnTop, syncEnabled) => {
+window.renderProfiles = (profiles, layoutMode, alwaysOnTop, syncEnabled, tabs) => {
+  const showTabs = profiles.length === 1 && layoutMode === 'focus';
+  document.body.classList.toggle('with-tabs', showTabs);
+  tabStrip.innerHTML = '';
+  if (showTabs && profiles[0]) {
+    tabs.forEach((tab) => {
+      const button = document.createElement('button');
+      button.className = 'profile-tab' + (tab.active ? ' active' : '');
+      button.dataset.tabAction = 'select';
+      button.dataset.tabId = tab.id;
+      button.title = tab.url || tab.title;
+      button.setAttribute('aria-label', tab.title || 'Вкладка');
+      const label = document.createElement('span');
+      label.className = 'profile-tab-label';
+      label.textContent = (tab.loading ? '◌ ' : '') + (tab.title || 'Новая вкладка');
+      button.append(label);
+      if (tabs.length > 1) {
+        const close = document.createElement('button');
+        close.className = 'profile-tab-close';
+        close.dataset.tabAction = 'close';
+        close.dataset.tabId = tab.id;
+        close.type = 'button';
+        close.textContent = '×';
+        close.title = 'Закрыть вкладку';
+        close.setAttribute('aria-label', 'Закрыть вкладку');
+        button.append(close);
+      }
+      tabStrip.append(button);
+    });
+    const add = document.createElement('button');
+    add.className = 'profile-tab-add';
+    add.dataset.tabAction = 'new';
+    add.textContent = '+';
+    add.title = 'Новая вкладка';
+    add.setAttribute('aria-label', 'Новая вкладка');
+    tabStrip.append(add);
+  }
   modeLabel.textContent = layoutMode === 'tiled' ? 'Плитки · ' + profiles.length : 'Управление · ' + profiles.length;
   pinButton.textContent = alwaysOnTop ? 'Закреплено ✓' : 'Закрепить';
   pinButton.classList.toggle('active', !!alwaysOnTop);
@@ -135,13 +182,22 @@ syncButton.addEventListener('click', async () => {
     syncButton.classList.toggle('active', next);
   } catch { window.alert('Не удалось изменить синхронизацию действий.'); }
 });
+tabStrip.addEventListener('click', (event) => {
+  const button = event.target.closest('button[data-tab-action]');
+  if (!button) return;
+  const action = button.dataset.tabAction;
+  const tabId = button.dataset.tabId;
+  if (action === 'new') void api.openTab(groupId);
+  else if (action === 'select' && tabId) void api.selectTab(groupId, tabId);
+  else if (action === 'close' && tabId) void api.closeTab(groupId, tabId);
+});
 api.onUrlChange(({ profileId, url }) => {
   const pane = tiles.querySelector('[data-profile-id="' + CSS.escape(profileId) + '"]');
   const address = pane && pane.querySelector('input[data-address]');
   if (address && document.activeElement !== address) address.value = url;
 });
 const initialProfiles = /*PANE_CONFIG*/;
-window.renderProfiles(initialProfiles, /*LAYOUT_MODE*/, /*PINNED*/, false);
+window.renderProfiles(initialProfiles, /*LAYOUT_MODE*/, /*PINNED*/, false, /*TAB_CONFIG*/);
 </script></body></html>`;
 
 function safeUrl(value: string): string {
@@ -194,13 +250,24 @@ function layoutGroup(group: BrowserGroup) {
   if (!items.length) return;
   const [width, totalHeight] = group.window.getContentSize();
   const globalToolbarHeight = 48;
+  const tabsToolbarHeight = group.views.size === 1 && group.layoutMode === 'focus' ? 38 : 0;
   const paneToolbarHeight = 42;
-  const contentHeight = Math.max(150, totalHeight - globalToolbarHeight);
+  const contentHeight = Math.max(150, totalHeight - globalToolbarHeight - tabsToolbarHeight);
+  const viewY = globalToolbarHeight + tabsToolbarHeight + paneToolbarHeight;
+  const hideView = (view: WebContentsView, index: number) => {
+    if (!view.webContents.isDestroyed()) view.setBounds({ x: -10000 - index, y: viewY, width: 1, height: 1 });
+  };
+  let hiddenIndex = 0;
+  for (const item of items) {
+    for (const tab of item.tabs) {
+      if (tab.view !== item.view) hideView(tab.view, hiddenIndex++);
+    }
+  }
 
   if (group.layoutMode === 'focus') {
     items.forEach(({ view }, index) => {
-      if (index === 0) view.setBounds({ x: 0, y: globalToolbarHeight + paneToolbarHeight, width, height: Math.max(100, totalHeight - globalToolbarHeight - paneToolbarHeight) });
-      else view.setBounds({ x: -10000 - index, y: globalToolbarHeight + paneToolbarHeight, width: 1, height: 1 });
+      if (index === 0) view.setBounds({ x: 0, y: viewY, width, height: Math.max(100, totalHeight - viewY) });
+      else hideView(view, hiddenIndex++);
     });
     return;
   }
@@ -234,10 +301,24 @@ function groupPaneConfig(group: BrowserGroup) {
   }));
 }
 
+function groupTabConfig(group: BrowserGroup) {
+  if (group.views.size !== 1 || group.layoutMode !== 'focus') return [];
+  const item = group.views.values().next().value as GroupView | undefined;
+  if (!item) return [];
+  return item.tabs.map((tab) => ({
+    id: tab.id,
+    title: tab.title || 'Новая вкладка',
+    url: tab.view.webContents.isDestroyed() ? tab.url : (tab.view.webContents.getURL() || tab.url),
+    active: tab.id === item.activeTabId,
+    loading: tab.loading,
+  }));
+}
+
 function updateGroupChrome(group: BrowserGroup) {
   if (group.window.isDestroyed() || group.window.webContents.isDestroyed()) return;
   const config = JSON.stringify(groupPaneConfig(group)).replace(/</g, '\\u003c');
-  const script = `window.renderProfiles(${config}, ${JSON.stringify(group.layoutMode)}, ${JSON.stringify(group.alwaysOnTop)}, ${JSON.stringify(group.syncInteractions)});`;
+  const tabs = JSON.stringify(groupTabConfig(group)).replace(/</g, '\\u003c');
+  const script = `window.renderProfiles(${config}, ${JSON.stringify(group.layoutMode)}, ${JSON.stringify(group.alwaysOnTop)}, ${JSON.stringify(group.syncInteractions)}, ${tabs});`;
   void group.window.webContents.executeJavaScript(script).catch(() => undefined);
 }
 
@@ -278,6 +359,56 @@ function userAgentForProfile(profile: BrowserProfile, ses: Session): string {
       ? 'Macintosh; Intel Mac OS X 10_15_7'
       : 'X11; Linux x86_64';
   return `Mozilla/5.0 (${os}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${chrome} Safari/537.36`;
+}
+
+function fingerprintForProfile(profile: BrowserProfile): string {
+  return Buffer.from(JSON.stringify({
+    hardwareConcurrency: profile.browser.hardwareConcurrency ?? 8,
+    deviceMemory: profile.browser.deviceMemory ?? 8,
+    locale: profile.browser.locale,
+    timezone: profile.browser.timezone,
+    osPlatform: profile.browser.osPlatform ?? '',
+    screenWidth: profile.browser.screenWidth ?? 0,
+    screenHeight: profile.browser.screenHeight ?? 0,
+    webglVendor: profile.browser.webglVendor ?? '',
+    webglRenderer: profile.browser.webglRenderer ?? '',
+  })).toString('base64');
+}
+
+function createProfileView(profile: BrowserProfile, partition: string, groupId: string, fingerprint: string): WebContentsView {
+  return new WebContentsView({
+    webPreferences: {
+      partition,
+      preload: path.join(__dirname, '../preload/fingerprint.js'),
+      additionalArguments: [`--moccount-fingerprint=${fingerprint}`, `--moccount-group=${groupId}`, `--moccount-profile=${profile.id}`],
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  });
+}
+
+function attachTabEvents(group: BrowserGroup, profileId: string, tab: BrowserTab): void {
+  const refreshTab = (url?: string) => {
+    if (tab.view.webContents.isDestroyed()) return;
+    tab.url = url || tab.view.webContents.getURL() || tab.url;
+    const currentTitle = tab.view.webContents.getTitle().trim();
+    tab.title = tab.url === 'about:blank' ? 'Новая вкладка' : (currentTitle || tab.url);
+    tab.loading = tab.view.webContents.isLoading();
+    const item = group.views.get(profileId);
+    if (item?.activeTabId === tab.id) syncGroupNavigation(group, profileId, tab.url);
+    updateGroupChrome(group);
+  };
+  tab.view.webContents.on('did-navigate', (_event, url) => refreshTab(url));
+  tab.view.webContents.on('did-navigate-in-page', (_event, url) => refreshTab(url));
+  tab.view.webContents.on('did-start-loading', () => { tab.loading = true; updateGroupChrome(group); });
+  tab.view.webContents.on('did-stop-loading', () => refreshTab());
+  tab.view.webContents.on('page-title-updated', (_event, title) => {
+    tab.title = title.trim() || tab.url || 'Новая вкладка';
+    updateGroupChrome(group);
+    const item = group.views.get(profileId);
+    if (item?.activeTabId === tab.id && group.views.size === 1) group.window.setTitle(`MoCcount — ${tab.title}`);
+  });
 }
 
 async function openBrowserGroup(profiles: BrowserProfile[], layoutMode: 'tiled' | 'focus'): Promise<void> {
@@ -331,7 +462,9 @@ async function openBrowserGroup(profiles: BrowserProfile[], layoutMode: 'tiled' 
   window.on('closed', () => {
     for (const [id, item] of group.views) {
       running.delete(id);
-      if (!item.view.webContents.isDestroyed()) item.view.webContents.close();
+      for (const tab of item.tabs) {
+        if (!tab.view.webContents.isDestroyed()) tab.view.webContents.close();
+      }
     }
     groups.delete(groupId);
   });
@@ -343,33 +476,20 @@ async function openBrowserGroup(profiles: BrowserProfile[], layoutMode: 'tiled' 
       await configureSession(profile, partition, ses);
       const userAgent = userAgentForProfile(profile, ses);
       ses.setUserAgent(userAgent, profile.browser.locale);
-      const fingerprint = Buffer.from(JSON.stringify({
-        hardwareConcurrency: profile.browser.hardwareConcurrency ?? 8,
-        deviceMemory: profile.browser.deviceMemory ?? 8,
-        locale: profile.browser.locale,
-        timezone: profile.browser.timezone,
-        osPlatform: profile.browser.osPlatform ?? '',
-        screenWidth: profile.browser.screenWidth ?? 0,
-        screenHeight: profile.browser.screenHeight ?? 0,
-        webglVendor: profile.browser.webglVendor ?? '',
-        webglRenderer: profile.browser.webglRenderer ?? '',
-      })).toString('base64');
-      const view = new WebContentsView({
-        webPreferences: {
-          partition,
-          preload: path.join(__dirname, '../preload/fingerprint.js'),
-          additionalArguments: [`--moccount-fingerprint=${fingerprint}`, `--moccount-group=${groupId}`, `--moccount-profile=${profile.id}`],
-          contextIsolation: true,
-          nodeIntegration: false,
-          sandbox: true,
-        },
-      });
-      const entry: GroupView = { profile, session: ses, view };
+      const fingerprint = fingerprintForProfile(profile);
+      const view = createProfileView(profile, partition, groupId, fingerprint);
+      const tab: BrowserTab = {
+        id: crypto.randomUUID(),
+        view,
+        url: safeUrl(profile.browser.startUrl),
+        title: profile.name,
+        loading: true,
+      };
+      const entry: GroupView = { profile, session: ses, view, tabs: [tab], activeTabId: tab.id, fingerprint };
       group.views.set(profile.id, entry);
       window.contentView.addChildView(view);
       running.set(profile.id, { window, session: ses, view, groupId });
-      view.webContents.on('did-navigate', (_event, url) => syncGroupNavigation(group, profile.id, url));
-      view.webContents.on('did-navigate-in-page', (_event, url) => syncGroupNavigation(group, profile.id, url));
+      attachTabEvents(group, profile.id, tab);
     }
 
     const safeJson = (value: unknown) => JSON.stringify(value).replace(/</g, '\\u003c');
@@ -377,7 +497,8 @@ async function openBrowserGroup(profiles: BrowserProfile[], layoutMode: 'tiled' 
       .replace("const groupId = new URLSearchParams(location.search).get('group') || '';", `const groupId = '${groupId}';`)
       .replace('const initialProfiles = /*PANE_CONFIG*/;', `const initialProfiles = ${safeJson(groupPaneConfig(group))};`)
       .replace('/*LAYOUT_MODE*/', JSON.stringify(layoutMode))
-      .replace('/*PINNED*/', 'false');
+      .replace('/*PINNED*/', 'false')
+      .replace('/*TAB_CONFIG*/', safeJson(groupTabConfig(group)));
     await window.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(controllerHtml)}`);
     layoutGroup(group);
 
@@ -421,6 +542,76 @@ async function openBrowserGroup(profiles: BrowserProfile[], layoutMode: 'tiled' 
   }
 }
 
+export async function openGroupTab(groupId: string): Promise<boolean> {
+  const group = groups.get(groupId);
+  if (!group || group.window.isDestroyed() || group.closing) throw new Error('Окно профиля уже закрыто.');
+  if (group.views.size !== 1 || group.layoutMode !== 'focus') throw new Error('Вкладки доступны в окне отдельного профиля.');
+  const item = group.views.values().next().value as GroupView | undefined;
+  if (!item) throw new Error('Профиль не найден.');
+  if (item.tabs.length >= 32) throw new Error('В одном профиле можно открыть не более 32 вкладок.');
+
+  const tab: BrowserTab = {
+    id: crypto.randomUUID(),
+    view: createProfileView(item.profile, partitionFor(item.profile.id), groupId, item.fingerprint),
+    url: 'about:blank',
+    title: 'Новая вкладка',
+    loading: false,
+  };
+  item.tabs.push(tab);
+  item.activeTabId = tab.id;
+  item.view = tab.view;
+  group.window.contentView.addChildView(tab.view);
+  running.set(item.profile.id, { window: group.window, session: item.session, view: tab.view, groupId });
+  attachTabEvents(group, item.profile.id, tab);
+  layoutGroup(group);
+  updateGroupChrome(group);
+  void tab.view.webContents.loadURL('about:blank').catch(() => undefined);
+  group.window.setTitle('MoCcount — Новая вкладка');
+  return true;
+}
+
+export function selectGroupTab(groupId: string, tabId: string): boolean {
+  const group = groups.get(groupId);
+  if (!group || group.window.isDestroyed() || group.closing || group.views.size !== 1 || group.layoutMode !== 'focus') return false;
+  const item = group.views.values().next().value as GroupView | undefined;
+  const tab = item?.tabs.find((candidate) => candidate.id === tabId);
+  if (!item || !tab || tab.view.webContents.isDestroyed()) return false;
+  item.activeTabId = tab.id;
+  item.view = tab.view;
+  running.set(item.profile.id, { window: group.window, session: item.session, view: tab.view, groupId });
+  group.lastSynchronizedUrl = tab.view.webContents.getURL();
+  layoutGroup(group);
+  updateGroupChrome(group);
+  updateGroupAddress(group, item.profile.id, tab.view.webContents.getURL() || tab.url);
+  group.window.setTitle(`MoCcount — ${tab.title || item.profile.name}`);
+  return true;
+}
+
+export function closeGroupTab(groupId: string, tabId: string): boolean {
+  const group = groups.get(groupId);
+  if (!group || group.window.isDestroyed() || group.closing || group.views.size !== 1 || group.layoutMode !== 'focus') return false;
+  const item = group.views.values().next().value as GroupView | undefined;
+  if (!item || item.tabs.length <= 1) return false;
+  const index = item.tabs.findIndex((candidate) => candidate.id === tabId);
+  if (index < 0) return false;
+  const [tab] = item.tabs.splice(index, 1);
+  group.window.contentView.removeChildView(tab.view);
+  if (!tab.view.webContents.isDestroyed()) tab.view.webContents.close();
+  if (item.activeTabId === tab.id) {
+    const next = item.tabs[Math.min(index, item.tabs.length - 1)];
+    item.activeTabId = next.id;
+    item.view = next.view;
+    running.set(item.profile.id, { window: group.window, session: item.session, view: next.view, groupId });
+    group.lastSynchronizedUrl = next.view.webContents.getURL();
+  }
+  layoutGroup(group);
+  updateGroupChrome(group);
+  updateGroupAddress(group, item.profile.id, item.view.webContents.getURL() || 'about:blank');
+  const active = item.tabs.find((candidate) => candidate.id === item.activeTabId);
+  group.window.setTitle(`MoCcount — ${active?.title || item.profile.name}`);
+  return true;
+}
+
 export async function launchProfile(profile: BrowserProfile): Promise<void> {
   const current = running.get(profile.id);
   if (current && !current.window.isDestroyed()) { current.window.focus(); return; }
@@ -439,10 +630,12 @@ export function stopProfile(id: string): void {
   if (!group || group.window.isDestroyed() || group.closing) return;
   const item = group.views.get(id);
   if (!item) { running.delete(id); return; }
-  group.window.contentView.removeChildView(item.view);
   group.views.delete(id);
   running.delete(id);
-  if (!item.view.webContents.isDestroyed()) item.view.webContents.close();
+  for (const tab of item.tabs) {
+    group.window.contentView.removeChildView(tab.view);
+    if (!tab.view.webContents.isDestroyed()) tab.view.webContents.close();
+  }
   if (!group.views.size) {
     group.closing = true;
     group.window.close();

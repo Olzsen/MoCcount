@@ -6,7 +6,7 @@ import { autoUpdater } from 'electron-updater';
 import { profileDraftSchema } from '../shared/validation';
 import { BrowserProfile, ProfileDraft, ProfileSummary } from '../shared/types';
 import { createProfile, deleteProfile, listProfiles, setProfilePinned, updateProfile } from './store';
-import { backGroup, checkProxy, clearSiteData, forwardGroup, getRunningIds, installProxyAuthHandler, launchProfile, launchProfilesTogether, navigateGroup, relayGroupInteraction, reloadGroup, toggleGroupAlwaysOnTop, setGroupInteractionSync, stopProfile } from './browser-manager';
+import { backGroup, checkProxy, clearSiteData, closeGroupTab, forwardGroup, getRunningIds, installProxyAuthHandler, launchProfile, launchProfilesTogether, navigateGroup, openGroupTab, relayGroupInteraction, reloadGroup, selectGroupTab, toggleGroupAlwaysOnTop, setGroupInteractionSync, stopProfile } from './browser-manager';
 
 const isDev = !app.isPackaged;
 const execFileAsync = promisify(execFile);
@@ -219,6 +219,18 @@ function registerIpc() {
   ipcMain.handle('group:back', (_event, id: unknown, profileId: unknown) => { if (typeof id === 'string' && typeof profileId === 'string') backGroup(id, profileId); });
   ipcMain.handle('group:forward', (_event, id: unknown, profileId: unknown) => { if (typeof id === 'string' && typeof profileId === 'string') forwardGroup(id, profileId); });
   ipcMain.handle('group:reload', (_event, id: unknown, profileId: unknown) => { if (typeof id === 'string' && typeof profileId === 'string') reloadGroup(id, profileId); });
+  ipcMain.handle('group:tab-open', (_event, id: unknown) => {
+    if (typeof id !== 'string') throw new Error('Некорректное окно браузера.');
+    return openGroupTab(id);
+  });
+  ipcMain.handle('group:tab-select', (_event, id: unknown, tabId: unknown) => {
+    if (typeof id !== 'string' || typeof tabId !== 'string') return false;
+    return selectGroupTab(id, tabId);
+  });
+  ipcMain.handle('group:tab-close', (_event, id: unknown, tabId: unknown) => {
+    if (typeof id !== 'string' || typeof tabId !== 'string') return false;
+    return closeGroupTab(id, tabId);
+  });
   ipcMain.handle('group:toggle-always-on-top', (_event, id: unknown) => {
     if (typeof id !== 'string') throw new Error('Некорректное окно браузера.');
     return toggleGroupAlwaysOnTop(id);

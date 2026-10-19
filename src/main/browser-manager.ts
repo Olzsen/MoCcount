@@ -26,9 +26,9 @@ const GROUP_CONTROLLER_HTML = `<!doctype html>
 <html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>MoCcount</title><style>
 *{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#111218;color:#eef0f7;font:13px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
-.global-bar{height:48px;display:flex;align-items:center;gap:8px;padding:0 12px;background:#171920;border-bottom:1px solid #2d303b;box-shadow:0 3px 12px #0002}
+.global-bar{height:48px;display:flex;align-items:center;gap:8px;padding:0 148px 0 12px;background:#171920;border-bottom:1px solid #2d303b;box-shadow:0 3px 12px #0002;-webkit-app-region:drag;app-region:drag}
 .brand{font-weight:800;letter-spacing:-.4px;color:#a99bff;white-space:nowrap}.group-label{font-size:10px;color:#8c91a1;border:1px solid #343743;padding:5px 8px;border-radius:6px;white-space:nowrap}
-button{height:30px;min-width:29px;padding:0 8px;border:1px solid #353946;border-radius:7px;background:#22252e;color:#e2e5ef;cursor:pointer;transition:background .16s,border-color .16s,transform .16s;flex-shrink:0}
+button{height:30px;min-width:29px;padding:0 8px;border:1px solid #353946;border-radius:7px;background:#22252e;color:#e2e5ef;cursor:pointer;transition:background .16s,border-color .16s,transform .16s;flex-shrink:0;-webkit-app-region:no-drag;app-region:no-drag}
 button:hover{background:#303441;border-color:#4a4e60}button:active{transform:scale(.97)}button:disabled{opacity:.4;cursor:default}
 .global-action{height:29px;font-size:10px;white-space:nowrap}.global-action.active{color:#9be0bd;border-color:#3a6b54;background:#1b3028}
 .profile-tiles{height:calc(100vh - 48px);display:grid;overflow:hidden;background:#0d0f14}
@@ -298,6 +298,15 @@ async function openBrowserGroup(profiles: BrowserProfile[], layoutMode: 'tiled' 
     minHeight: layoutMode === 'tiled' ? 620 : 480,
     title: isMulti ? `MoCcount — ${layoutMode === 'tiled' ? 'Плитки' : 'Управление'} (${profiles.length})` : `MoCcount — ${profiles[0].name}`,
     backgroundColor: '#111218',
+    autoHideMenuBar: true,
+    titleBarStyle: 'hidden',
+    ...(process.platform !== 'darwin' ? {
+      titleBarOverlay: {
+        color: '#171920',
+        symbolColor: '#eef0f7',
+        height: 36,
+      },
+    } : {}),
     webPreferences: {
       preload: path.join(__dirname, '../preload/group-controller.js'),
       contextIsolation: true,

@@ -40,7 +40,7 @@ button:hover{background:#303441;border-color:#4a4e60}button:active{transform:sca
 .address:focus{border-color:#9486f4;box-shadow:0 0 0 2px #9486f41c}
 .go{background:#9486f4;color:#171522;border-color:#a89dff;font-weight:700;font-size:10px}.go:hover{background:#a99dfc}
 .tiles-status{height:19px;padding:3px 7px;color:#747988;background:#121319;font-size:9px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-@media(max-width:860px){.pane-title{display:none}.global-bar{gap:5px;padding:0 6px}.brand{display:none}.pane-toolbar{gap:3px;padding:0 3px}button{min-width:25px;padding:0 5px}.global-action{font-size:9px}}
+@media(max-width:860px){.pane-title{display:none}.global-bar{gap:5px;padding:0 148px 0 6px}.brand{display:none}.pane-toolbar{gap:3px;padding:0 3px}button{min-width:25px;padding:0 5px}.global-action{font-size:9px}}
 </style></head><body>
 <div class="global-bar"><span class="brand">MoCcount</span><span class="group-label" id="mode">Мульти-запуск</span><button class="global-action" id="pin-window" title="Закрепить окно поверх остальных">Закрепить</button><button class="global-action" id="sync-actions" data-enabled="false" title="Повторять действия во всех профилях">Действия выкл.</button></div>
 <div id="profile-tiles" class="profile-tiles"></div>
